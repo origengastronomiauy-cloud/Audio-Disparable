@@ -1627,6 +1627,11 @@
                         <span style="font-size:0.68rem; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); display:block;">Tiempo Transcurrido</span>
                         <span class="current-time-bold" id="guideCurrentTime">00:00</span>
                     </div>
+                    <div style="text-align: center;">
+                        <span id="guideTrackStateLabel" style="font-size: 0.72rem; font-weight: 700; color: var(--gold-accent); background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.25); padding: 4px 10px; border-radius: 12px; display: inline-block;">
+                            ⏹ Listo (0:00)
+                        </span>
+                    </div>
                     <div style="text-align: right;">
                         <span style="font-size:0.68rem; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); display:block;">Duración Total</span>
                         <span class="total-time-badge" id="guideTotalTime">17:00</span>
@@ -1798,6 +1803,7 @@
             let trackDuration = 1020; // 17:00 en segundos por defecto (17 * 60)
             let isScrubbing = false;
             let guideLocalAudioActive = false;
+            let adminPlaybackRunning = false;
             let pingInterval = null;
 
             // Determinar si es Administrador (Guía) mediante URL ?admin=1
@@ -1882,8 +1888,12 @@
                 }
 
                 if (isAdmin) {
-                    guideTrackStateLabel.textContent = "⏹ " + TRACKS_METADATA[trackId].title + " Lista (0:00)";
-                    guideTrackStateLabel.style.color = "var(--gold-accent)";
+                    adminPlaybackRunning = false;
+                    setAdminPauseBtnState(false);
+                    if (guideTrackStateLabel) {
+                        guideTrackStateLabel.textContent = "⏹ " + TRACKS_METADATA[trackId].title + " Lista (0:00)";
+                        guideTrackStateLabel.style.color = "var(--gold-accent)";
+                    }
                 }
             }
 
@@ -2233,16 +2243,24 @@
 
                 // Actualizaciones visuales en el panel del Administrador
                 if (isAdmin) {
-                    const trackName = currentTrack === 1 ? "Audio 1" : "Audio 2";
-                    if (action === "PLAY") {
-                        guideTrackStateLabel.textContent = "▶ Reproduciendo (" + trackName + ")";
-                        guideTrackStateLabel.style.color = "var(--success)";
-                    } else if (action === "PAUSE") {
-                        guideTrackStateLabel.textContent = "⏸ En Pausa (" + trackName + ")";
-                        guideTrackStateLabel.style.color = "var(--warning)";
-                    } else if (action === "STOP") {
-                        guideTrackStateLabel.textContent = "⏹ Detenido (0:00 · " + trackName + ")";
-                        guideTrackStateLabel.style.color = "var(--danger)";
+                    const trackName = currentTrack === 1 ? "Teatro Sonoro 1" : "Teatro Sonoro 2";
+                    if (guideTrackStateLabel) {
+                        if (action === "PLAY") {
+                            adminPlaybackRunning = true;
+                            setAdminPauseBtnState(false);
+                            guideTrackStateLabel.textContent = "▶ Reproduciendo (" + trackName + ")";
+                            guideTrackStateLabel.style.color = "var(--success)";
+                        } else if (action === "PAUSE") {
+                            adminPlaybackRunning = false;
+                            setAdminPauseBtnState(true);
+                            guideTrackStateLabel.textContent = "⏸ En Pausa (" + trackName + ")";
+                            guideTrackStateLabel.style.color = "var(--warning)";
+                        } else if (action === "STOP") {
+                            adminPlaybackRunning = false;
+                            setAdminPauseBtnState(false);
+                            guideTrackStateLabel.textContent = "⏹ Detenido (0:00 · " + trackName + ")";
+                            guideTrackStateLabel.style.color = "var(--danger)";
+                        }
                     }
                 }
             }
@@ -2508,7 +2526,7 @@
             });
 
             audio.addEventListener('timeupdate', () => {
-                if (isAdmin && !isScrubbing) {
+                if (isAdmin && guideLocalAudioActive && !audio.paused && !isScrubbing) {
                     guideScrubber.value = Math.floor(audio.currentTime);
                     guideCurrentTime.textContent = formatTime(audio.currentTime);
                 }
@@ -2528,38 +2546,92 @@
             // =========================================================================
             // 3. PANEL DE CONTROL AVANZADO PARA EL GUÍA
             // =========================================================================
+            function setAdminPauseBtnState(isPaused) {
+                if (!adminPauseBtn) return;
+                if (isPaused) {
+                    adminPauseBtn.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        <span>▶ REANUDAR</span>
+                    `;
+                    adminPauseBtn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+                    adminPauseBtn.style.color = "#ffffff";
+                    adminPauseBtn.style.boxShadow = "0 8px 18px -4px rgba(16, 185, 129, 0.4)";
+                } else {
+                    adminPauseBtn.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="4" width="4" height="16"></rect>
+                            <rect x="14" y="4" width="4" height="16"></rect>
+                        </svg>
+                        <span>⏸ PAUSAR</span>
+                    `;
+                    adminPauseBtn.style.background = "";
+                    adminPauseBtn.style.color = "";
+                    adminPauseBtn.style.boxShadow = "";
+                }
+            }
+
             adminPlayBtn.addEventListener('click', () => {
                 const currentTime = parseFloat(guideScrubber.value);
+                adminPlaybackRunning = true;
+                setAdminPauseBtnState(false);
                 sendCommand("PLAY", currentTime);
                 if (guideLocalAudioActive) {
                     audio.currentTime = currentTime;
                     audio.play().catch(()=>{});
                 }
-                guideTrackStateLabel.textContent = "▶ Reproduciendo";
-                guideTrackStateLabel.style.color = "var(--success)";
+                if (guideTrackStateLabel) {
+                    guideTrackStateLabel.textContent = "▶ Reproduciendo";
+                    guideTrackStateLabel.style.color = "var(--success)";
+                }
             });
 
             adminPauseBtn.addEventListener('click', () => {
                 const currentTime = parseFloat(guideScrubber.value);
-                sendCommand("PAUSE", currentTime);
-                if (guideLocalAudioActive) {
-                    audio.pause();
+                if (adminPlaybackRunning) {
+                    // Si está sonando -> Pausar y cambiar a REANUDAR
+                    adminPlaybackRunning = false;
+                    sendCommand("PAUSE", currentTime);
+                    if (guideLocalAudioActive) {
+                        audio.pause();
+                    }
+                    if (guideTrackStateLabel) {
+                        guideTrackStateLabel.textContent = "⏸ En Pausa";
+                        guideTrackStateLabel.style.color = "var(--warning)";
+                    }
+                    setAdminPauseBtnState(true);
+                } else {
+                    // Si está pausado -> Reanudar y cambiar a PAUSAR
+                    adminPlaybackRunning = true;
+                    sendCommand("PLAY", currentTime);
+                    if (guideLocalAudioActive) {
+                        audio.currentTime = currentTime;
+                        audio.play().catch(()=>{});
+                    }
+                    if (guideTrackStateLabel) {
+                        guideTrackStateLabel.textContent = "▶ Reproduciendo";
+                        guideTrackStateLabel.style.color = "var(--success)";
+                    }
+                    setAdminPauseBtnState(false);
                 }
-                guideTrackStateLabel.textContent = "⏸ En Pausa";
-                guideTrackStateLabel.style.color = "var(--warning)";
             });
 
             // BOTÓN SOLICITADO: "STOP / REINICIAR" (detiene y resetea a segundo 0)
             adminStopBtn.addEventListener('click', () => {
+                adminPlaybackRunning = false;
                 sendCommand("STOP", 0);
                 guideScrubber.value = 0;
                 guideCurrentTime.textContent = "00:00";
+                setAdminPauseBtnState(false);
                 if (guideLocalAudioActive) {
                     audio.pause();
                     audio.currentTime = 0;
                 }
-                guideTrackStateLabel.textContent = "⏹ Detenido (0:00)";
-                guideTrackStateLabel.style.color = "var(--danger)";
+                if (guideTrackStateLabel) {
+                    guideTrackStateLabel.textContent = "⏹ Detenido (0:00)";
+                    guideTrackStateLabel.style.color = "var(--danger)";
+                }
             });
 
             // Saltos de tiempo (+15s / -15s)
@@ -2594,14 +2666,21 @@
                 }
             });
 
-            // Temporizador interno del guía si el audio local está apagado
+            // Temporizador interno del guía para avanzar el tiempo segundo a segundo
             let guideTimer = setInterval(() => {
-                if (isAdmin && guideTrackStateLabel.textContent.includes("Reproduciendo") && !guideLocalAudioActive && !isScrubbing) {
+                if (isAdmin && adminPlaybackRunning && !isScrubbing) {
                     let cur = parseFloat(guideScrubber.value);
                     if (cur < trackDuration) {
                         cur += 1;
                         guideScrubber.value = cur;
                         guideCurrentTime.textContent = formatTime(cur);
+                    } else {
+                        adminPlaybackRunning = false;
+                        setAdminPauseBtnState(false);
+                        if (guideTrackStateLabel) {
+                            guideTrackStateLabel.textContent = "⏹ Fin del Audio";
+                            guideTrackStateLabel.style.color = "var(--gold-accent)";
+                        }
                     }
                 }
             }, 1000);
@@ -2612,7 +2691,7 @@
                 audio.muted = !guideLocalAudioActive;
                 if (guideLocalAudioActive) {
                     audio.currentTime = parseFloat(guideScrubber.value);
-                    if (guideTrackStateLabel.textContent.includes("Reproduciendo")) {
+                    if (adminPlaybackRunning) {
                         audio.play().catch(()=>{});
                     }
                 } else {
@@ -2622,9 +2701,13 @@
 
             // Botón de Alerta de Emergencia para el grupo
             guideAlertBtn.addEventListener('click', () => {
+                adminPlaybackRunning = false;
+                setAdminPauseBtnState(true);
                 sendCommand("PAUSE", parseFloat(guideScrubber.value));
                 sendCommand("ALERT_EMERGENCY");
-                guideTrackStateLabel.textContent = "📢 Alerta Enviada";
+                if (guideTrackStateLabel) {
+                    guideTrackStateLabel.textContent = "📢 Alerta Enviada";
+                }
             });
 
             // Iniciar vista y conectar MQTT
