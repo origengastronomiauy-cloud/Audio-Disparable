@@ -415,7 +415,8 @@
             display: flex;
             flex-direction: column;
             gap: 4px;
-            cursor: pointer;
+            cursor: default;
+            user-select: none;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             color: var(--text-secondary);
             text-align: left;
@@ -1407,25 +1408,25 @@
                 </div>
                 <h2 class="card-title">Audioguía ORIGEN</h2>
                 <p class="card-description">
-                    Bienvenido a la Ruta MVD Bohemia. Selecciona el Teatro Sonoro (Audio 1 primero o Audio 2 después), tu idioma y pulsa <strong>"Conectar y Activar Audio"</strong>.
+                    Bienvenido a la Ruta MVD Bohemia. El guía seleccionará el Teatro Sonoro en vivo para todo el grupo. Elige tu idioma y pulsa <strong>"Conectar y Activar Audio"</strong>.
                 </p>
 
-                <!-- SELECTOR DE TEATRO SONORO (AUDIO 1 PRIMERO, AUDIO 2 DESPUÉS) -->
+                <!-- INDICADOR DE TEATRO SONORO (AUDIO 1 VS AUDIO 2 - CONTROLADO POR EL GUÍA) -->
                 <div class="track-selector-section">
-                    <label class="selector-label">Teatro Sonoro</label>
+                    <label class="selector-label">Teatro Sonoro (Controlado por el Guía)</label>
                     <div class="track-grid">
-                        <button type="button" class="track-btn active" data-track="1" id="touristTrackBtn1">
+                        <button type="button" class="track-btn active" data-track="1" id="touristTrackBtn1" title="El guía oficial selecciona qué audio se reproduce">
                             <div class="track-btn-header">
                                 <span class="track-number">Audio 1</span>
-                                <span class="track-status-pill">Primero</span>
+                                <span class="track-status-pill" id="touristTrackPill1">✓ En Vivo</span>
                             </div>
                             <div class="track-title">Teatro Sonoro 1</div>
                             <div class="track-sub">Primer Acto · 17 minutos</div>
                         </button>
-                        <button type="button" class="track-btn" data-track="2" id="touristTrackBtn2">
+                        <button type="button" class="track-btn" data-track="2" id="touristTrackBtn2" title="El guía oficial selecciona qué audio se reproduce">
                             <div class="track-btn-header">
                                 <span class="track-number">Audio 2</span>
-                                <span class="track-status-pill">Segundo</span>
+                                <span class="track-status-pill" id="touristTrackPill2">En Espera</span>
                             </div>
                             <div class="track-title">Teatro Sonoro 2</div>
                             <div class="track-sub">Segundo Acto · 5 minutos</div>
@@ -1510,15 +1511,15 @@
                     <span id="liveLanguageBadge" style="color: #fbbf24;">ESTADO: 🟡 EN STAND-BY</span>
                 </div>
 
-                <!-- BARRA DE TEATRO SONORO ACTIVO Y CAMBIO RÁPIDO EN VIVO -->
+                <!-- BARRA DE TEATRO SONORO ACTIVO (CONTROLADO POR EL GUÍA) -->
                 <div class="live-track-bar">
                     <div class="live-track-info">
-                        <span class="live-track-tag">Teatro Sonoro Seleccionado:</span>
+                        <span class="live-track-tag">Teatro Sonoro Activo:</span>
                         <span class="live-track-name" id="touristActiveTrackLabel">Teatro Sonoro 1 (17 min)</span>
                     </div>
-                    <button type="button" class="btn-quick-switch" id="touristQuickSwitchTrackBtn">
-                        Pasar a Teatro Sonoro 2 ⏭
-                    </button>
+                    <span style="font-size:0.68rem; color:#38bdf8; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.3); padding:4px 8px; border-radius:10px; font-weight:700; flex-shrink:0;">
+                        📡 Transmisión del Guía
+                    </span>
                 </div>
 
                 <!-- RADAR PULSE / VISUALIZADOR -->
@@ -1804,6 +1805,8 @@
             let isScrubbing = false;
             let guideLocalAudioActive = false;
             let adminPlaybackRunning = false;
+            let isTouristConnected = false; // Sólo reproduce audio si el turista pulsó "Conectar y Activar Audio"
+            let lastGuideTargetTime = null;
             let pingInterval = null;
 
             // Determinar si es Administrador (Guía) mediante URL ?admin=1
@@ -1849,16 +1852,23 @@
             function updateTrackUI() {
                 const trackData = TRACKS_METADATA[currentTrack] || TRACKS_METADATA[1];
 
-                // Tourist Setup Buttons
-                if (touristTrackBtn1) touristTrackBtn1.classList.toggle('active', currentTrack === 1);
-                if (touristTrackBtn2) touristTrackBtn2.classList.toggle('active', currentTrack === 2);
+                // Tourist Setup Buttons (Indicadores dinámicos que se marcan según la elección del Administrador)
+                if (touristTrackBtn1) {
+                    const isActive = currentTrack === 1;
+                    touristTrackBtn1.classList.toggle('active', isActive);
+                    const pill1 = document.getElementById('touristTrackPill1') || touristTrackBtn1.querySelector('.track-status-pill');
+                    if (pill1) pill1.textContent = isActive ? '✓ En Vivo' : 'En Espera';
+                }
+                if (touristTrackBtn2) {
+                    const isActive = currentTrack === 2;
+                    touristTrackBtn2.classList.toggle('active', isActive);
+                    const pill2 = document.getElementById('touristTrackPill2') || touristTrackBtn2.querySelector('.track-status-pill');
+                    if (pill2) pill2.textContent = isActive ? '✓ En Vivo' : 'En Espera';
+                }
 
                 // Tourist Live Stage Bar
                 if (touristActiveTrackLabel) {
-                    touristActiveTrackLabel.textContent = trackData.subtitle;
-                }
-                if (touristQuickSwitchTrackBtn) {
-                    touristQuickSwitchTrackBtn.textContent = (currentTrack === 1 ? "Pasar a Teatro Sonoro 2 ⏭" : "⏮ Volver a Teatro Sonoro 1");
+                    touristActiveTrackLabel.textContent = (currentTrack === 1 ? "Teatro Sonoro 1 (17 min)" : "Teatro Sonoro 2 (5 min)");
                 }
 
                 // Admin Pills
@@ -1868,24 +1878,13 @@
 
             function selectTrack(trackId, isUserAction = false) {
                 if (currentTrack === trackId && !isUserAction) return;
-                const wasPlaying = !audio.paused;
+                pauseAdminPlaybackTimer();
                 audio.pause();
                 audio.currentTime = 0;
                 if (guideScrubber) guideScrubber.value = 0;
                 if (guideCurrentTime) guideCurrentTime.textContent = "00:00";
 
                 loadTrack(trackId, currentLang);
-
-                if (isUserAction && !isAdmin) {
-                    showStreetBanner(
-                        "🎧 Teatro Sonoro Seleccionado", 
-                        TRACKS_METADATA[trackId].title, 
-                        "🎵", 
-                        false
-                    );
-                    setTimeout(hideStreetBanner, 2500);
-                    updateTouristUIStandby();
-                }
 
                 if (isAdmin) {
                     adminPlaybackRunning = false;
@@ -1897,12 +1896,29 @@
                 }
             }
 
-            // Click Handlers para Pistas
-            if (touristTrackBtn1) touristTrackBtn1.addEventListener('click', () => selectTrack(1, true));
-            if (touristTrackBtn2) touristTrackBtn2.addEventListener('click', () => selectTrack(2, true));
-            if (touristQuickSwitchTrackBtn) {
-                touristQuickSwitchTrackBtn.addEventListener('click', () => {
-                    selectTrack(currentTrack === 1 ? 2 : 1, true);
+            // Indicadores de Pistas para el Turista (Sólo lectura: muestran la elección del Administrador)
+            if (touristTrackBtn1) {
+                touristTrackBtn1.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    showStreetBanner(
+                        "🎧 Control del Guía Oficial", 
+                        "El Teatro Sonoro (Audio 1 o 2) es seleccionado por el guía para todo el contingente.", 
+                        "ℹ️", 
+                        false
+                    );
+                    setTimeout(hideStreetBanner, 2800);
+                });
+            }
+            if (touristTrackBtn2) {
+                touristTrackBtn2.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    showStreetBanner(
+                        "🎧 Control del Guía Oficial", 
+                        "El Teatro Sonoro (Audio 1 o 2) es seleccionado por el guía para todo el contingente.", 
+                        "ℹ️", 
+                        false
+                    );
+                    setTimeout(hideStreetBanner, 2800);
                 });
             }
             if (adminTrackPill1) adminTrackPill1.addEventListener('click', () => {
@@ -1930,7 +1946,9 @@
                     listenerView.style.display = 'block';
                     adminPanel.style.display = 'none';
                     if (adminIndicatorBadge) adminIndicatorBadge.style.display = 'none';
-                    audio.muted = false;
+                    // TURISTA SILENCIADO POR DEFECTO HASTA QUE PULSE "Conectar y Activar Audio"
+                    audio.muted = true;
+                    audio.pause();
                     loadTrack(currentTrack, currentLang);
                 }
             }
@@ -1975,6 +1993,26 @@
 
             if (changeLanguageBtn) {
                 changeLanguageBtn.addEventListener('click', () => {
+                    isTouristConnected = false;
+                    audio.pause();
+                    enableAudioBtn.disabled = false;
+                    enableAudioBtn.innerHTML = `
+                        <div class="btn-icon-orb">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+                                <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path>
+                            </svg>
+                        </div>
+                        <div class="btn-text-col">
+                            <span class="btn-title-main">Conectar y Activar Audio</span>
+                            <span class="btn-subtitle-sub">Sincronización en vivo con el guía</span>
+                        </div>
+                        <div class="btn-pulse-arrow">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        </div>
+                    `;
                     touristLiveStage.style.display = 'none';
                     touristSetupStage.style.display = 'block';
                 });
@@ -2207,10 +2245,11 @@
                     }
                 }
 
-                // Control de audio para los turistas (o guía si tiene monitor activado)
-                if (!isAdmin || guideLocalAudioActive) {
+                // Control de audio: Los turistas SÓLO reciben reproducción si pulsaron "Conectar y Activar Audio"
+                if (!isAdmin && isTouristConnected) {
                     if (action === "PLAY") {
                         expectedPlaybackState = 'PLAYING';
+                        audio.muted = false;
                         if (targetTime !== null && Math.abs(audio.currentTime - targetTime) > 1.5) {
                             audio.currentTime = targetTime;
                         }
@@ -2239,6 +2278,34 @@
                     } else if (action === "SEEK" && targetTime !== null) {
                         audio.currentTime = targetTime;
                     }
+                } else if (!isAdmin && !isTouristConnected) {
+                    // Si el turista aún NO activó el audio, NUNCA reproduce nada en su teléfono
+                    audio.pause();
+                    audio.muted = true;
+                    if (action === "PLAY") {
+                        expectedPlaybackState = 'PLAYING';
+                    } else if (action === "PAUSE") {
+                        expectedPlaybackState = 'PAUSED';
+                    } else if (action === "STOP") {
+                        expectedPlaybackState = 'STOPPED';
+                    }
+                    if (targetTime !== null) {
+                        lastGuideTargetTime = targetTime;
+                    }
+                } else if (isAdmin && guideLocalAudioActive) {
+                    if (action === "PLAY") {
+                        audio.muted = false;
+                        if (targetTime !== null) audio.currentTime = targetTime;
+                        audio.play().catch(()=>{});
+                    } else if (action === "PAUSE") {
+                        audio.pause();
+                        if (targetTime !== null) audio.currentTime = targetTime;
+                    } else if (action === "STOP") {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    } else if (action === "SEEK" && targetTime !== null) {
+                        audio.currentTime = targetTime;
+                    }
                 }
 
                 // Actualizaciones visuales en el panel del Administrador
@@ -2248,18 +2315,26 @@
                         if (action === "PLAY") {
                             adminPlaybackRunning = true;
                             setAdminPauseBtnState(false);
+                            startAdminPlaybackTimer();
                             guideTrackStateLabel.textContent = "▶ Reproduciendo (" + trackName + ")";
                             guideTrackStateLabel.style.color = "var(--success)";
                         } else if (action === "PAUSE") {
                             adminPlaybackRunning = false;
                             setAdminPauseBtnState(true);
+                            pauseAdminPlaybackTimer();
                             guideTrackStateLabel.textContent = "⏸ En Pausa (" + trackName + ")";
                             guideTrackStateLabel.style.color = "var(--warning)";
                         } else if (action === "STOP") {
                             adminPlaybackRunning = false;
                             setAdminPauseBtnState(false);
+                            stopAdminPlaybackTimer();
+                            guideScrubber.value = 0;
+                            guideCurrentTime.textContent = "00:00";
                             guideTrackStateLabel.textContent = "⏹ Detenido (0:00 · " + trackName + ")";
                             guideTrackStateLabel.style.color = "var(--danger)";
+                        } else if (action === "SEEK" && targetTime !== null) {
+                            guideScrubber.value = targetTime;
+                            guideCurrentTime.textContent = formatTime(targetTime);
                         }
                     }
                 }
@@ -2320,12 +2395,12 @@
             document.addEventListener('visibilitychange', async () => {
                 if (document.visibilityState === 'visible') {
                     // Re-adquirir Wake Lock
-                    if (touristLiveStage.style.display === 'block') {
+                    if (touristLiveStage.style.display === 'block' && isTouristConnected) {
                         requestWakeLock();
                     }
 
                     // Comprobar si el audio debería estar sonando y fue frenado por el SO
-                    if (expectedPlaybackState === 'PLAYING' && audio.paused && !isAdmin) {
+                    if (expectedPlaybackState === 'PLAYING' && audio.paused && !isAdmin && isTouristConnected) {
                         resumeOverlay.style.display = 'flex';
                     }
 
@@ -2370,11 +2445,13 @@
             // Overlay de recuperación rápida táctil (desbloqueo tras suspensión)
             resumeTouchBtn.addEventListener('click', () => {
                 resumeOverlay.style.display = 'none';
-                audio.play().then(() => {
-                    updateTouristUIPlaying();
-                }).catch(e => {
-                    console.error("Resume error:", e);
-                });
+                if (!isAdmin && isTouristConnected) {
+                    audio.play().then(() => {
+                        updateTouristUIPlaying();
+                    }).catch(e => {
+                        console.error("Resume error:", e);
+                    });
+                }
             });
 
             function showEmergencyAlert() {
@@ -2435,11 +2512,27 @@
             });
 
             function activateLiveTouristMode() {
+                isTouristConnected = true;
+                audio.muted = false;
                 touristSetupStage.style.display = 'none';
                 touristLiveStage.style.display = 'block';
                 requestWakeLock();
-                updateTouristUIStandby();
-                sendTelemetryStatus('STANDBY');
+
+                // Si el guía ya estaba reproduciendo mientras el turista se conectaba:
+                if (expectedPlaybackState === 'PLAYING') {
+                    if (lastGuideTargetTime !== null && lastGuideTargetTime > 0) {
+                        audio.currentTime = lastGuideTargetTime;
+                    }
+                    audio.play().then(() => {
+                        updateTouristUIPlaying();
+                    }).catch(() => {
+                        updateTouristUIStandby();
+                    });
+                } else {
+                    updateTouristUIStandby();
+                }
+
+                sendTelemetryStatus(expectedPlaybackState === 'PLAYING' ? 'PLAYING' : 'STANDBY');
                 if (!telemetryInterval) {
                     telemetryInterval = setInterval(() => {
                         if (!isAdmin && client.isConnected()) {
@@ -2546,6 +2639,46 @@
             // =========================================================================
             // 3. PANEL DE CONTROL AVANZADO PARA EL GUÍA
             // =========================================================================
+            let adminPlaybackTimer = null;
+
+            function startAdminPlaybackTimer() {
+                if (adminPlaybackTimer) clearInterval(adminPlaybackTimer);
+                adminPlaybackRunning = true;
+                adminPlaybackTimer = setInterval(() => {
+                    if (!isAdmin || !adminPlaybackRunning || isScrubbing) return;
+                    let cur = parseFloat(guideScrubber.value || 0);
+                    if (cur < trackDuration) {
+                        cur = Math.min(trackDuration, cur + 1);
+                        guideScrubber.value = cur;
+                        if (guideCurrentTime) guideCurrentTime.textContent = formatTime(cur);
+                    } else {
+                        stopAdminPlaybackTimer();
+                        const trackName = currentTrack === 1 ? "Teatro Sonoro 1" : "Teatro Sonoro 2";
+                        if (guideTrackStateLabel) {
+                            guideTrackStateLabel.textContent = "⏹ Fin del Audio (" + trackName + ")";
+                            guideTrackStateLabel.style.color = "var(--gold-accent)";
+                        }
+                    }
+                }, 1000);
+            }
+
+            function pauseAdminPlaybackTimer() {
+                adminPlaybackRunning = false;
+                if (adminPlaybackTimer) {
+                    clearInterval(adminPlaybackTimer);
+                    adminPlaybackTimer = null;
+                }
+            }
+
+            function stopAdminPlaybackTimer() {
+                adminPlaybackRunning = false;
+                if (adminPlaybackTimer) {
+                    clearInterval(adminPlaybackTimer);
+                    adminPlaybackTimer = null;
+                }
+                setAdminPauseBtnState(false);
+            }
+
             function setAdminPauseBtnState(isPaused) {
                 if (!adminPauseBtn) return;
                 if (isPaused) {
@@ -2573,53 +2706,58 @@
             }
 
             adminPlayBtn.addEventListener('click', () => {
-                const currentTime = parseFloat(guideScrubber.value);
+                const currentTime = parseFloat(guideScrubber.value || 0);
                 adminPlaybackRunning = true;
                 setAdminPauseBtnState(false);
+                startAdminPlaybackTimer();
                 sendCommand("PLAY", currentTime);
                 if (guideLocalAudioActive) {
+                    audio.muted = false;
                     audio.currentTime = currentTime;
                     audio.play().catch(()=>{});
                 }
+                const trackName = currentTrack === 1 ? "Teatro Sonoro 1" : "Teatro Sonoro 2";
                 if (guideTrackStateLabel) {
-                    guideTrackStateLabel.textContent = "▶ Reproduciendo";
+                    guideTrackStateLabel.textContent = "▶ Reproduciendo (" + trackName + ")";
                     guideTrackStateLabel.style.color = "var(--success)";
                 }
             });
 
             adminPauseBtn.addEventListener('click', () => {
-                const currentTime = parseFloat(guideScrubber.value);
+                const currentTime = parseFloat(guideScrubber.value || 0);
+                const trackName = currentTrack === 1 ? "Teatro Sonoro 1" : "Teatro Sonoro 2";
                 if (adminPlaybackRunning) {
-                    // Si está sonando -> Pausar y cambiar a REANUDAR
-                    adminPlaybackRunning = false;
+                    // Si está sonando -> Pausar y cambiar botón a REANUDAR
+                    pauseAdminPlaybackTimer();
                     sendCommand("PAUSE", currentTime);
                     if (guideLocalAudioActive) {
                         audio.pause();
                     }
                     if (guideTrackStateLabel) {
-                        guideTrackStateLabel.textContent = "⏸ En Pausa";
+                        guideTrackStateLabel.textContent = "⏸ En Pausa (" + trackName + ")";
                         guideTrackStateLabel.style.color = "var(--warning)";
                     }
                     setAdminPauseBtnState(true);
                 } else {
-                    // Si está pausado -> Reanudar y cambiar a PAUSAR
-                    adminPlaybackRunning = true;
+                    // Si está pausado -> Reanudar y cambiar botón a PAUSAR
+                    setAdminPauseBtnState(false);
+                    startAdminPlaybackTimer();
                     sendCommand("PLAY", currentTime);
                     if (guideLocalAudioActive) {
+                        audio.muted = false;
                         audio.currentTime = currentTime;
                         audio.play().catch(()=>{});
                     }
                     if (guideTrackStateLabel) {
-                        guideTrackStateLabel.textContent = "▶ Reproduciendo";
+                        guideTrackStateLabel.textContent = "▶ Reproduciendo (" + trackName + ")";
                         guideTrackStateLabel.style.color = "var(--success)";
                     }
-                    setAdminPauseBtnState(false);
                 }
             });
 
             // BOTÓN SOLICITADO: "STOP / REINICIAR" (detiene y resetea a segundo 0)
             adminStopBtn.addEventListener('click', () => {
-                adminPlaybackRunning = false;
+                stopAdminPlaybackTimer();
                 sendCommand("STOP", 0);
                 guideScrubber.value = 0;
                 guideCurrentTime.textContent = "00:00";
@@ -2628,15 +2766,16 @@
                     audio.pause();
                     audio.currentTime = 0;
                 }
+                const trackName = currentTrack === 1 ? "Teatro Sonoro 1" : "Teatro Sonoro 2";
                 if (guideTrackStateLabel) {
-                    guideTrackStateLabel.textContent = "⏹ Detenido (0:00)";
+                    guideTrackStateLabel.textContent = "⏹ Detenido (0:00 · " + trackName + ")";
                     guideTrackStateLabel.style.color = "var(--danger)";
                 }
             });
 
             // Saltos de tiempo (+15s / -15s)
             skipBackBtn.addEventListener('click', () => {
-                let newTime = Math.max(0, parseFloat(guideScrubber.value) - 15);
+                let newTime = Math.max(0, parseFloat(guideScrubber.value || 0) - 15);
                 guideScrubber.value = newTime;
                 guideCurrentTime.textContent = formatTime(newTime);
                 sendCommand("SEEK", newTime);
@@ -2644,7 +2783,7 @@
             });
 
             skipForwardBtn.addEventListener('click', () => {
-                let newTime = Math.min(trackDuration, parseFloat(guideScrubber.value) + 15);
+                let newTime = Math.min(trackDuration, parseFloat(guideScrubber.value || 0) + 15);
                 guideScrubber.value = newTime;
                 guideCurrentTime.textContent = formatTime(newTime);
                 sendCommand("SEEK", newTime);
@@ -2666,24 +2805,13 @@
                 }
             });
 
-            // Temporizador interno del guía para avanzar el tiempo segundo a segundo
-            let guideTimer = setInterval(() => {
-                if (isAdmin && adminPlaybackRunning && !isScrubbing) {
-                    let cur = parseFloat(guideScrubber.value);
-                    if (cur < trackDuration) {
-                        cur += 1;
-                        guideScrubber.value = cur;
-                        guideCurrentTime.textContent = formatTime(cur);
-                    } else {
-                        adminPlaybackRunning = false;
-                        setAdminPauseBtnState(false);
-                        if (guideTrackStateLabel) {
-                            guideTrackStateLabel.textContent = "⏹ Fin del Audio";
-                            guideTrackStateLabel.style.color = "var(--gold-accent)";
-                        }
-                    }
-                }
-            }, 1000);
+            guideScrubber.addEventListener('mouseup', () => {
+                isScrubbing = false;
+            });
+
+            guideScrubber.addEventListener('touchend', () => {
+                isScrubbing = false;
+            });
 
             // Toggle para silenciar/activar monitor local en el teléfono del guía
             guideMonitorToggle.addEventListener('change', (e) => {
