@@ -1,0 +1,2637 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ORIGEN - Audio Guía Sincronizada MVD Bohemia</title>
+    <meta name="description" content="Audioguía sincronizada para turismo cultural y gastronómico en Montevideo (Ruta MVD Bohemia). Vinculada a pasaporte físico con telemetría en tiempo real vía MQTT.">
+    <meta property="og:title" content="ORIGEN - Audio Guía Sincronizada MVD Bohemia">
+    <meta property="og:description" content="Audioguía sincronizada para turismo cultural y gastronómico en Montevideo (Ruta MVD Bohemia).">
+    <meta property="og:type" content="website">
+    <meta name="theme-color" content="#090d16">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <!-- PWA Manifest inline as data URI -->
+    <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22ORIGEN%20Audio%20Tour%22%2C%22short_name%22%3A%22ORIGEN%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23090d16%22%2C%22theme_color%22%3A%22%23090d16%22%7D">
+    
+    <!-- Paho MQTT client -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+
+    <style>
+        :root {
+            --bg-deep: #070a10;
+            --bg-card: rgba(18, 24, 38, 0.85);
+            --bg-surface: #131b2c;
+            --border-card: rgba(255, 255, 255, 0.08);
+            --border-highlight: rgba(245, 158, 11, 0.35);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --gold-accent: #f59e0b;
+            --gold-gradient: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            --bronze-glow: rgba(245, 158, 11, 0.25);
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #38bdf8;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-deep);
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.08) 0%, transparent 60%),
+                radial-gradient(circle at 10% 90%, rgba(30, 58, 138, 0.12) 0%, transparent 50%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: calc(16px + var(--safe-top)) 16px calc(24px + var(--safe-bottom)) 16px;
+            overflow-x: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Top Brand Navigation */
+        .brand-header {
+            width: 100%;
+            max-width: 440px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 4px 16px;
+        }
+
+        .brand-logo-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-align: left;
+        }
+
+        .brand-emblem {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--gold-accent);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        .brand-titles h1 {
+            font-size: 1.15rem;
+            font-weight: 800;
+            letter-spacing: 2.5px;
+            color: #fff;
+            text-transform: uppercase;
+            line-height: 1.1;
+        }
+
+        .brand-titles span {
+            font-size: 0.72rem;
+            letter-spacing: 1.2px;
+            color: var(--gold-accent);
+            text-transform: uppercase;
+            font-weight: 600;
+            display: block;
+        }
+
+        .mode-toggle-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-card);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            padding: 7px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(8px);
+        }
+
+        .mode-toggle-btn:active {
+            transform: scale(0.95);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Street Network & Status Bar */
+        .status-pill-bar {
+            width: 100%;
+            max-width: 440px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-card);
+            border-radius: 12px;
+            padding: 8px 14px;
+            font-size: 0.78rem;
+            margin-bottom: 16px;
+            backdrop-filter: blur(12px);
+        }
+
+        .network-status-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .status-dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 10px var(--success);
+        }
+
+        .status-dot.connected::after {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            border-radius: 50%;
+            border: 1px solid var(--success);
+            opacity: 0.6;
+            animation: pulse-ring 2s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.9); opacity: 0.8; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+
+        .network-label {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .channel-name {
+            color: var(--text-muted);
+            font-family: monospace;
+            font-size: 0.72rem;
+        }
+
+        /* Central Container */
+        .app-main {
+            width: 100%;
+            max-width: 440px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            flex-grow: 1;
+            justify-content: center;
+        }
+
+        /* Glassmorphic Card */
+        .premium-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 24px;
+            padding: 22px 14px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(20px);
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.3s ease;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .premium-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+        }
+
+        .card-header-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--gold-accent);
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .card-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 6px;
+            letter-spacing: -0.02em;
+        }
+
+        .card-description {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            line-height: 1.45;
+            margin-bottom: 20px;
+        }
+
+        /* Selector de Idioma Nativo Móvil - Resistencia Total a Desbordamientos */
+        .language-selector-section {
+            margin-bottom: 20px;
+            text-align: left;
+            width: 100%;
+        }
+
+        .selector-label {
+            font-size: 0.76rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .language-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .lang-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--text-secondary);
+            width: 100%;
+            box-sizing: border-box;
+            text-align: left;
+        }
+
+        .lang-card:hover {
+            border-color: rgba(255, 255, 255, 0.16);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .lang-card.active {
+            background: rgba(245, 158, 11, 0.08);
+            border-color: var(--gold-accent);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
+        }
+
+        .lang-card-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            flex-grow: 1;
+        }
+
+        .lang-card .flag-circle {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.05rem;
+            font-weight: 700;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            flex-shrink: 0;
+        }
+
+        .lang-card-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .lang-card .lang-name {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lang-card .lang-sub {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lang-card.coming-soon {
+            opacity: 0.65;
+            cursor: not-allowed;
+            background: rgba(255, 255, 255, 0.015);
+        }
+
+        .lang-card.coming-soon:hover {
+            border-color: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.015);
+        }
+
+        .lang-badge {
+            font-size: 0.62rem;
+            border-radius: 6px;
+            padding: 3px 8px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        .lang-badge.ready {
+            color: #34d399;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .lang-badge.soon {
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.15);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        /* Selector de Teatro Sonoro (Audio 1 & Audio 2) */
+        .track-selector-section {
+            margin-bottom: 20px;
+            text-align: left;
+            width: 100%;
+        }
+
+        .track-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .track-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 12px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--text-secondary);
+            text-align: left;
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .track-btn:hover {
+            border-color: rgba(255, 255, 255, 0.16);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .track-btn.active {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: var(--gold-accent);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
+        }
+
+        .track-btn-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2px;
+        }
+
+        .track-number {
+            font-size: 0.72rem;
+            font-weight: 800;
+            color: var(--gold-accent);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .track-status-pill {
+            font-size: 0.58rem;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 6px;
+            border-radius: 10px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .track-btn.active .track-status-pill {
+            background: var(--gold-accent);
+            color: #0b0f17;
+            font-weight: 800;
+        }
+
+        .track-title {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            line-height: 1.25;
+        }
+
+        .track-sub {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+        }
+
+        /* Tourist Live Stage Track Switcher Bar */
+        .live-track-bar {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--border-card);
+            border-radius: 14px;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 14px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .live-track-info {
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+            min-width: 0;
+        }
+
+        .live-track-tag {
+            font-size: 0.62rem;
+            color: var(--gold-accent);
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .live-track-name {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-quick-switch {
+            background: rgba(245, 158, 11, 0.15);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: var(--gold-accent);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+            transition: all 0.2s ease;
+        }
+
+        .btn-quick-switch:active {
+            transform: scale(0.95);
+        }
+
+        /* Admin Track Selector */
+        .admin-track-selector-bar {
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid var(--border-card);
+            border-radius: 14px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+            text-align: left;
+        }
+
+        .admin-track-toggle-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .admin-track-pill {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .admin-track-pill.active {
+            background: rgba(56, 189, 248, 0.18);
+            border-color: #38bdf8;
+            color: #38bdf8;
+        }
+
+        /* Admin Telemetry Cards */
+        .admin-telemetry-3grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .admin-stat-card {
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid var(--border-card);
+            border-radius: 14px;
+            padding: 10px 8px;
+            text-align: center;
+        }
+
+        .admin-stat-number {
+            font-size: 1.35rem;
+            font-weight: 800;
+            font-family: monospace;
+            line-height: 1.1;
+        }
+
+        .admin-stat-title {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        /* Live Device Roster */
+        .device-roster-card {
+            background: rgba(10, 15, 26, 0.7);
+            border: 1px solid var(--border-card);
+            border-radius: 14px;
+            padding: 12px 14px;
+            margin-bottom: 18px;
+            text-align: left;
+        }
+
+        .roster-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+        }
+
+        .device-list-container {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 130px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .device-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.72rem;
+        }
+
+        .device-tag {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+
+        .device-status-badge {
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .device-status-badge.standby {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .device-status-badge.listening {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .device-status-badge.paused {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .lang-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .lang-btn.active {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid var(--gold-accent);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.18);
+        }
+
+        .lang-btn.active .flag-circle {
+            transform: scale(1.08);
+            border: 1px solid var(--gold-accent);
+        }
+
+        .lang-btn.active .lang-name {
+            color: var(--gold-accent);
+        }
+
+        .lang-btn.active .lang-sub {
+            color: #fcd34d;
+        }
+
+        /* Ultra-Premium Hero Action Button */
+        .primary-action-btn {
+            width: 100%;
+            min-height: 58px;
+            padding: 13px 18px;
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 55%, #b45309 100%);
+            border: 1px solid rgba(254, 243, 199, 0.45);
+            border-radius: 16px;
+            color: #0b0f17;
+            cursor: pointer;
+            box-shadow: 
+                0 10px 24px -4px rgba(245, 158, 11, 0.45),
+                0 3px 6px rgba(0, 0, 0, 0.35),
+                inset 0 1px 1px rgba(255, 255, 255, 0.5);
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            text-align: left;
+            position: relative;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        .primary-action-btn.center-btn {
+            justify-content: center;
+            text-align: center;
+            font-size: 0.95rem;
+            font-weight: 800;
+        }
+
+        .primary-action-btn::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+            transform: skewX(-20deg);
+            animation: btn-shimmer 4.5s infinite;
+        }
+
+        @keyframes btn-shimmer {
+            0%, 65% { left: -100%; }
+            100% { left: 200%; }
+        }
+
+        .primary-action-btn:hover {
+            box-shadow: 
+                0 14px 30px -4px rgba(245, 158, 11, 0.6),
+                inset 0 1px 2px rgba(255, 255, 255, 0.6);
+            transform: translateY(-1.5px);
+            border-color: rgba(254, 243, 199, 0.65);
+        }
+
+        .primary-action-btn:active {
+            transform: scale(0.975);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        }
+
+        .primary-action-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-icon-orb {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: rgba(11, 15, 23, 0.16);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #0b0f17;
+            flex-shrink: 0;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.15);
+        }
+
+        .btn-text-col {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex-grow: 1;
+            min-width: 0;
+        }
+
+        .btn-title-main {
+            font-size: 0.96rem;
+            font-weight: 800;
+            color: #0b0f17;
+            letter-spacing: -0.01em;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-subtitle-sub {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: rgba(11, 15, 23, 0.78);
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-pulse-arrow {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(11, 15, 23, 0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #0b0f17;
+            flex-shrink: 0;
+            transition: transform 0.2s ease;
+        }
+
+        .primary-action-btn:hover .btn-pulse-arrow {
+            transform: translateX(2px);
+        }
+
+        /* Tour Info & Headphone Notice */
+        .headphone-notice {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-top: 14px;
+        }
+
+        .headphone-notice svg {
+            color: var(--gold-accent);
+            flex-shrink: 0;
+        }
+
+        /* Tourist Live State Card (When Connected) */
+        .tourist-live-state {
+            display: none;
+            text-align: center;
+        }
+
+        .radar-container {
+            position: relative;
+            width: 130px;
+            height: 130px;
+            margin: 10px auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .radar-pulse-ring {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            border: 2px solid rgba(245, 158, 11, 0.4);
+            animation: radar-expand 2.6s infinite cubic-bezier(0.2, 0.8, 0.4, 1);
+        }
+
+        .radar-pulse-ring:nth-child(2) {
+            animation-delay: 0.9s;
+        }
+
+        .radar-pulse-ring:nth-child(3) {
+            animation-delay: 1.8s;
+        }
+
+        @keyframes radar-expand {
+            0% {
+                transform: scale(0.35);
+                opacity: 0.9;
+            }
+            70% {
+                opacity: 0.35;
+            }
+            100% {
+                transform: scale(1.35);
+                opacity: 0;
+            }
+        }
+
+        .radar-center-orb {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            border: 2px solid var(--gold-accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--gold-accent);
+            box-shadow: 0 0 25px rgba(245, 158, 11, 0.35);
+            z-index: 2;
+            transition: all 0.3s ease;
+        }
+
+        .radar-center-orb.playing {
+            border-color: var(--success);
+            color: var(--success);
+            box-shadow: 0 0 30px rgba(16, 185, 129, 0.45);
+        }
+
+        /* Audio Waveform Animation (When Playing) */
+        .audio-wave-bars {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            height: 36px;
+            margin: 10px 0 16px;
+        }
+
+        .wave-bar {
+            width: 4px;
+            height: 8px;
+            background: var(--gold-accent);
+            border-radius: 4px;
+            transition: height 0.2s ease;
+        }
+
+        .audio-wave-bars.active .wave-bar {
+            background: var(--success);
+            animation: wave-bounce 1.2s infinite ease-in-out;
+        }
+
+        .audio-wave-bars.active .wave-bar:nth-child(1) { animation-delay: 0.0s; }
+        .audio-wave-bars.active .wave-bar:nth-child(2) { animation-delay: 0.2s; }
+        .audio-wave-bars.active .wave-bar:nth-child(3) { animation-delay: 0.4s; }
+        .audio-wave-bars.active .wave-bar:nth-child(4) { animation-delay: 0.1s; }
+        .audio-wave-bars.active .wave-bar:nth-child(5) { animation-delay: 0.5s; }
+        .audio-wave-bars.active .wave-bar:nth-child(6) { animation-delay: 0.3s; }
+        .audio-wave-bars.active .wave-bar:nth-child(7) { animation-delay: 0.6s; }
+
+        @keyframes wave-bounce {
+            0%, 100% { height: 6px; }
+            50% { height: 32px; }
+        }
+
+        .status-hero-text {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 6px;
+            min-height: 1.6em;
+        }
+
+        .status-sub-text {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+            max-width: 320px;
+            margin: 0 auto 16px;
+        }
+
+        .wake-lock-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 5px 12px;
+            border-radius: 20px;
+        }
+
+        .wake-lock-pill.active {
+            color: #38bdf8;
+            border-color: rgba(56, 189, 248, 0.25);
+            background: rgba(56, 189, 248, 0.06);
+        }
+
+        /* ADMIN / GUÍA PANEL STYLES */
+        .admin-panel {
+            display: none;
+            width: 100%;
+        }
+
+        .admin-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .admin-meta-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-card);
+            border-radius: 14px;
+            padding: 12px 14px;
+            text-align: left;
+        }
+
+        .admin-meta-title {
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .admin-meta-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #f8fafc;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Master Audio Progress Section */
+        .progress-control-card {
+            background: rgba(10, 15, 26, 0.85);
+            border: 1px solid var(--border-card);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .time-display-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 10px;
+        }
+
+        .current-time-bold {
+            font-size: 1.7rem;
+            font-weight: 800;
+            font-family: monospace;
+            color: var(--gold-accent);
+            letter-spacing: -0.5px;
+        }
+
+        .total-time-badge {
+            font-size: 0.95rem;
+            font-family: monospace;
+            color: var(--text-muted);
+        }
+
+        .scrubber-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #1e293b;
+            outline: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .scrubber-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: var(--gold-accent);
+            cursor: pointer;
+            border: 3px solid #090d16;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+            transition: transform 0.1s ease;
+        }
+
+        .scrubber-slider::-webkit-slider-thumb:active {
+            transform: scale(1.25);
+        }
+
+        /* Guide Actions Button Layout */
+        .guide-btn-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .btn-play-all {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border: none;
+            padding: 16px 20px;
+            border-radius: 14px;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            box-shadow: 0 10px 20px -5px rgba(16, 185, 129, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-play-all:active {
+            transform: scale(0.97);
+        }
+
+        .dual-btn-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .btn-pause-all {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            border: none;
+            padding: 15px 16px;
+            border-radius: 14px;
+            color: #0b0f17;
+            font-size: 0.92rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            box-shadow: 0 8px 18px -4px rgba(245, 158, 11, 0.35);
+            transition: all 0.2s;
+        }
+
+        .btn-stop-all {
+            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+            border: none;
+            padding: 15px 16px;
+            border-radius: 14px;
+            color: #fff;
+            font-size: 0.92rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            box-shadow: 0 8px 18px -4px rgba(239, 68, 68, 0.35);
+            transition: all 0.2s;
+        }
+
+        .btn-pause-all:active, .btn-stop-all:active {
+            transform: scale(0.97);
+        }
+
+        /* Quick Skips Row */
+        .jump-btn-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-skip {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-card);
+            border-radius: 10px;
+            padding: 9px;
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-skip:active {
+            background: rgba(255, 255, 255, 0.08);
+            transform: scale(0.96);
+        }
+
+        /* Guide Audio Monitor & Settings Switch */
+        .guide-settings-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 10px 14px;
+            border-radius: 12px;
+            margin-top: 14px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: #334155;
+            transition: 0.3s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: var(--gold-accent);
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+
+        /* Floating Street Resilience Banner (Offline / Desync) */
+        .street-banner {
+            position: fixed;
+            top: calc(14px + var(--safe-top));
+            left: 50%;
+            transform: translateX(-50%) translateY(-120%);
+            width: calc(100% - 28px);
+            max-width: 420px;
+            background: #1e1b18;
+            border: 1px solid var(--warning);
+            border-radius: 16px;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.85);
+            z-index: 1000;
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            backdrop-filter: blur(16px);
+        }
+
+        .street-banner.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .street-banner.danger {
+            border-color: var(--danger);
+            background: #2a1215;
+        }
+
+        .banner-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .banner-content {
+            flex-grow: 1;
+            text-align: left;
+        }
+
+        .banner-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 2px;
+        }
+
+        .banner-sub {
+            font-size: 0.75rem;
+            color: #cbd5e1;
+            line-height: 1.3;
+        }
+
+        .banner-action-btn {
+            background: var(--gold-accent);
+            color: #0b0f17;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        /* Emergency Street Alert Overlay */
+        .emergency-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(11, 15, 23, 0.95);
+            backdrop-filter: blur(25px);
+            z-index: 2000;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .emergency-box {
+            max-width: 380px;
+            width: 100%;
+            background: #181c26;
+            border: 2px solid var(--warning);
+            border-radius: 24px;
+            padding: 28px 20px;
+            box-shadow: 0 0 50px rgba(245, 158, 11, 0.3);
+        }
+
+        .emergency-icon {
+            font-size: 3rem;
+            margin-bottom: 14px;
+            animation: bounce 1s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- STREET RESILIENCE BANNER (AUTO-NOTIFY ON SIGNAL LOSS OR DESYNC) -->
+    <div id="streetBanner" class="street-banner" role="alert">
+        <div class="banner-icon" id="bannerIcon">📶</div>
+        <div class="banner-content">
+            <div class="banner-title" id="bannerTitle">Conexión Inestable</div>
+            <div class="banner-sub" id="bannerSub">Intentando reconectar al tour en la calle...</div>
+        </div>
+        <button id="bannerAction" class="banner-action-btn" style="display:none;">Reintentar</button>
+    </div>
+
+    <!-- EMERGENCY RESUME OVERLAY (IF BROWSER SUSPENDED AUDIO ON BACKGROUND) -->
+    <div id="resumeOverlay" class="emergency-overlay">
+        <div class="emergency-box">
+            <div class="emergency-icon">⏸️</div>
+            <h2 style="font-size:1.3rem; margin-bottom: 8px; color: #fff;">Audio en Pausa por el Sistema</h2>
+            <p style="font-size:0.85rem; color: #cbd5e1; margin-bottom: 20px; line-height: 1.4;">
+                El navegador suspendió el sonido al cambiar de app o bloquear la pantalla. Toca para resincronizarte con el tour.
+            </p>
+            <button id="resumeTouchBtn" class="primary-action-btn center-btn">
+                ▶ Reanudar Audio en Vivo
+            </button>
+        </div>
+    </div>
+
+    <!-- TOP HEADER -->
+    <header class="brand-header">
+        <div class="brand-logo-group" id="brandLogoGroup" title="ORIGEN">
+            <div class="brand-titles">
+                <h1 id="brandTitleH1">ORIGEN</h1>
+                <span>Ruta MVD Bohemia</span>
+            </div>
+        </div>
+        <div id="adminIndicatorBadge" style="display:none; font-size:0.68rem; color:#38bdf8; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.3); padding:4px 10px; border-radius:12px; font-weight:700; letter-spacing:0.8px;">
+            GUÍA · ADMIN
+        </div>
+    </header>
+
+    <!-- LIVE MQTT & NETWORK STATUS BAR -->
+    <div class="status-pill-bar">
+        <div class="network-status-group">
+            <span class="status-dot" id="globalConnDot"></span>
+            <span class="network-label" id="globalStatusLabel">Conectando a la red satelital...</span>
+        </div>
+        <span class="channel-name" id="channelIndicator">#bohemia_01</span>
+    </div>
+
+    <!-- MAIN INTERACTIVE CONTAINER -->
+    <main class="app-main">
+
+        <!-- 1. VISTA DEL TURISTA (SELECCIÓN DE IDIOMA Y ESPERA SINCRONIZADA) -->
+        <div class="premium-card" id="listenerView">
+            
+            <!-- ETAPA A: CONFIGURACIÓN Y SELECCIÓN DE IDIOMA -->
+            <div id="touristSetupStage">
+                <div class="card-header-badge">
+                    <span>🎫 PASAPORTE FÍSICO · ESCANEO QR VERIFICADO</span>
+                </div>
+                <h2 class="card-title">Audioguía ORIGEN</h2>
+                <p class="card-description">
+                    Bienvenido a la Ruta MVD Bohemia. Selecciona el Teatro Sonoro (Audio 1 primero o Audio 2 después), tu idioma y pulsa <strong>"Conectar y Activar Audio"</strong>.
+                </p>
+
+                <!-- SELECTOR DE TEATRO SONORO (AUDIO 1 PRIMERO, AUDIO 2 DESPUÉS) -->
+                <div class="track-selector-section">
+                    <label class="selector-label">Teatro Sonoro</label>
+                    <div class="track-grid">
+                        <button type="button" class="track-btn active" data-track="1" id="touristTrackBtn1">
+                            <div class="track-btn-header">
+                                <span class="track-number">Audio 1</span>
+                                <span class="track-status-pill">Primero</span>
+                            </div>
+                            <div class="track-title">Teatro Sonoro 1</div>
+                            <div class="track-sub">Primer Acto · 17 minutos</div>
+                        </button>
+                        <button type="button" class="track-btn" data-track="2" id="touristTrackBtn2">
+                            <div class="track-btn-header">
+                                <span class="track-number">Audio 2</span>
+                                <span class="track-status-pill">Segundo</span>
+                            </div>
+                            <div class="track-title">Teatro Sonoro 2</div>
+                            <div class="track-sub">Segundo Acto · 5 minutos</div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- SELECTOR DE IDIOMA NATIVO (SIN DESBORDAMIENTOS EN PANTALLA) -->
+                <div class="language-selector-section">
+                    <label class="selector-label">Idioma de la Narración</label>
+                    <div class="language-list">
+                        <!-- Español (Activo) -->
+                        <button type="button" class="lang-card active" data-lang="es" id="btnLangEs">
+                            <div class="lang-card-left">
+                                <div class="flag-circle">🇺🇾</div>
+                                <div class="lang-card-text">
+                                    <span class="lang-name">Español</span>
+                                    <span class="lang-sub">Narración original del tour</span>
+                                </div>
+                            </div>
+                            <span class="lang-badge ready">✓ Activo</span>
+                        </button>
+
+                        <!-- English (EN) -->
+                        <button type="button" class="lang-card coming-soon" data-lang="en" id="btnLangEn" title="Próximamente disponible">
+                            <div class="lang-card-left">
+                                <div class="flag-circle" style="color: #94a3b8; font-size: 0.82rem;">EN</div>
+                                <div class="lang-card-text">
+                                    <span class="lang-name" style="color: #cbd5e1;">English</span>
+                                    <span class="lang-sub">English audio edition</span>
+                                </div>
+                            </div>
+                            <span class="lang-badge soon">Próximamente</span>
+                        </button>
+
+                        <!-- Português (PT) -->
+                        <button type="button" class="lang-card coming-soon" data-lang="pt" id="btnLangPt" title="Próximamente disponible">
+                            <div class="lang-card-left">
+                                <div class="flag-circle" style="color: #94a3b8; font-size: 0.82rem;">PT</div>
+                                <div class="lang-card-text">
+                                    <span class="lang-name" style="color: #cbd5e1;">Português</span>
+                                    <span class="lang-sub">Roteiro em português</span>
+                                </div>
+                            </div>
+                            <span class="lang-badge soon">Próximamente</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- BOTÓN PRINCIPAL DE CONEXIÓN Y DESBLOQUEO DE AUDIO (REDiseñado) -->
+                <button id="enableAudioBtn" class="primary-action-btn" type="button">
+                    <div class="btn-icon-orb">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+                            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path>
+                        </svg>
+                    </div>
+                    <div class="btn-text-col">
+                        <span class="btn-title-main">Conectar y Activar Audio</span>
+                        <span class="btn-subtitle-sub">Sincronización en vivo con el guía</span>
+                    </div>
+                    <div class="btn-pulse-arrow">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </div>
+                </button>
+
+                <div class="headphone-notice">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>Recomendado: auriculares estéreo para 3D audio</span>
+                </div>
+            </div>
+
+            <!-- ETAPA B: ESTADO EN VIVO DEL TURISTA (LISTO / PULSO DE ESPERA / REPRODUCIENDO) -->
+            <div id="touristLiveStage" class="tourist-live-state">
+                <div class="card-header-badge">
+                    <span id="liveLanguageBadge" style="color: #fbbf24;">ESTADO: 🟡 EN STAND-BY</span>
+                </div>
+
+                <!-- BARRA DE TEATRO SONORO ACTIVO Y CAMBIO RÁPIDO EN VIVO -->
+                <div class="live-track-bar">
+                    <div class="live-track-info">
+                        <span class="live-track-tag">Teatro Sonoro Seleccionado:</span>
+                        <span class="live-track-name" id="touristActiveTrackLabel">Teatro Sonoro 1 (17 min)</span>
+                    </div>
+                    <button type="button" class="btn-quick-switch" id="touristQuickSwitchTrackBtn">
+                        Pasar a Teatro Sonoro 2 ⏭
+                    </button>
+                </div>
+
+                <!-- RADAR PULSE / VISUALIZADOR -->
+                <div class="radar-container">
+                    <div class="radar-pulse-ring"></div>
+                    <div class="radar-pulse-ring"></div>
+                    <div class="radar-pulse-ring"></div>
+                    <div class="radar-center-orb" id="radarCenterOrb">
+                        <svg id="radarIconWave" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- BARRAS ECUALIZADORAS CUANDO SUENA -->
+                <div class="audio-wave-bars" id="audioWaveBars">
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                </div>
+
+                <div class="status-hero-text" id="touristHeroText">
+                    🟡 Listo en Stand-by
+                </div>
+
+                <p class="status-sub-text" id="touristSubText">
+                    Tu pasaporte y audio están conectados. El guía ya ve tu celular listo en su pantalla y disparará la narración en breve.
+                </p>
+
+                <div style="display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap;">
+                    <div class="wake-lock-pill" id="wakeLockBadge">
+                        <span>☀️</span>
+                        <span id="wakeLockText">Pantalla activa protegida</span>
+                    </div>
+                    <button id="changeLanguageBtn" style="background: none; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; color: var(--text-muted); font-size: 0.7rem; padding: 4px 10px; cursor: pointer;">
+                        Cambiar Idioma
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 2. VISTA DEL ADMINISTRADOR (PANEL DE CONTROL AVANZADO PARA EL GUÍA) -->
+        <div class="premium-card admin-panel" id="adminPanel">
+            <div class="card-header-badge">
+                <span style="color: #38bdf8;">GUÍA OFICIAL · RUTA BOHEMIA</span>
+            </div>
+            <h2 class="card-title">Control Maestro ORIGEN</h2>
+            <p class="card-description" style="margin-bottom: 14px;">
+                Supervisa a los turistas en <em>Stand-by</em> antes de disparar el audio y verifica en tiempo real quiénes están escuchando.
+            </p>
+
+            <!-- TELEMETRÍA DE TURISTAS EN TIEMPO REAL (STAND-BY, ESCUCHANDO, TOTAL) -->
+            <div class="admin-telemetry-3grid">
+                <div class="admin-stat-card" style="border-color: rgba(245, 158, 11, 0.35);">
+                    <div class="admin-stat-number" style="color: #fbbf24;" id="touristStandbyCount">0</div>
+                    <div class="admin-stat-title">🟡 En Stand-by</div>
+                </div>
+                <div class="admin-stat-card" style="border-color: rgba(16, 185, 129, 0.35);">
+                    <div class="admin-stat-number" style="color: #34d399;" id="touristPlayingCount">0</div>
+                    <div class="admin-stat-title">🎧 Escuchando</div>
+                </div>
+                <div class="admin-stat-card">
+                    <div class="admin-stat-number" style="color: #cbd5e1;" id="touristTotalCount">0</div>
+                    <div class="admin-stat-title">📱 Conectados</div>
+                </div>
+            </div>
+
+            <!-- ROSTER / LISTA EN VIVO DE DISPOSITIVOS -->
+            <div class="device-roster-card">
+                <div class="roster-header">
+                    <span>Dispositivos del Contingente en Vivo</span>
+                    <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 500;">Sincronización Satelital</span>
+                </div>
+                <div class="device-list-container" id="deviceListContainer">
+                    <div style="font-size: 0.72rem; color: var(--text-muted); text-align: center; padding: 10px 0;">
+                        Esperando que los turistas escaneen su pasaporte y conecten audio...
+                    </div>
+                </div>
+            </div>
+
+            <!-- SELECTOR DE TEATRO SONORO DEL GUÍA (AUDIO 1 VS AUDIO 2) -->
+            <div class="admin-track-selector-bar">
+                <span style="font-size:0.68rem; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); display:block; margin-bottom:4px;">
+                    Teatro Sonoro a Disparar a los Turistas:
+                </span>
+                <div class="admin-track-toggle-group">
+                    <button type="button" class="admin-track-pill active" id="adminTrackPill1" data-track="1">
+                        <span>1️⃣ Teatro Sonoro 1 (17 min)</span>
+                    </button>
+                    <button type="button" class="admin-track-pill" id="adminTrackPill2" data-track="2">
+                        <span>2️⃣ Teatro Sonoro 2 (5 min)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- BARRA DE PROGRESO Y TEMPORIZADOR AVANZADO (00:00 / 17:00) -->
+            <div class="progress-control-card">
+                <div class="time-display-row">
+                    <div>
+                        <span style="font-size:0.68rem; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); display:block;">Tiempo Transcurrido</span>
+                        <span class="current-time-bold" id="guideCurrentTime">00:00</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="font-size:0.68rem; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); display:block;">Duración Total</span>
+                        <span class="total-time-badge" id="guideTotalTime">17:00</span>
+                    </div>
+                </div>
+
+                <input type="range" id="guideScrubber" class="scrubber-slider" min="0" max="1020" value="0" step="1">
+
+                <div class="jump-btn-row">
+                    <button type="button" class="btn-skip" id="skipBackBtn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>
+                        -15 seg
+                    </button>
+                    <button type="button" class="btn-skip" id="skipForwardBtn">
+                        +15 seg
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- BOTONES DE MANDO DEL GUÍA -->
+            <div class="guide-btn-grid">
+                <button type="button" id="adminPlayBtn" class="btn-play-all">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    <span>▶ REPRODUCIR TODOS</span>
+                </button>
+
+                <div class="dual-btn-row">
+                    <button type="button" id="adminPauseBtn" class="btn-pause-all">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="4" width="4" height="16"></rect>
+                            <rect x="14" y="4" width="4" height="16"></rect>
+                        </svg>
+                        <span>⏸ PAUSAR</span>
+                    </button>
+                    
+                    <button type="button" id="adminStopBtn" class="btn-stop-all" title="Detiene y resetea al segundo 0 para contingencias en la calle">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+                        </svg>
+                        <span>⏹ STOP / 0:00</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- MONITOR DE AUDIO DEL GUÍA Y BOTÓN DE ALERTA -->
+            <div class="guide-settings-bar">
+                <span>Escuchar retorno en este teléfono</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="guideMonitorToggle">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <button type="button" id="guideAlertBtn" style="margin-top:10px; width:100%; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; font-size: 0.78rem; font-weight: 700; padding: 10px; border-radius: 12px; cursor: pointer; text-transform: uppercase;">
+                ⚠️ Pausa de Emergencia (Aviso al Grupo)
+            </button>
+        </div>
+
+    </main>
+
+    <!-- AUDIO PLAYER ELEMENT INVISIBLE: preload="auto" y playsinline son VITALES para móviles -->
+    <audio id="audioTrack" preload="auto" playsinline webkit-playsinline></audio>
+
+    <!-- CLIENT LOGIC & REAL-TIME MQTT SYNC SCRIPT -->
+    <script>
+        (function() {
+            // =========================================================================
+            // CONFIGURACIÓN DE AUDIO MULTILINGÜE & PISTAS (TEATRO SONORO 1 & 2)
+            // =========================================================================
+            const TRACKS_METADATA = {
+                1: {
+                    id: 1,
+                    title: "Teatro Sonoro 1",
+                    subtitle: "Teatro Sonoro 1 (17 min)",
+                    duration: 1020, // 17:00 (17 minutos)
+                    sources: {
+                        es: "https://res.cloudinary.com/origin-mvd/video/upload/v1710000001/origin_audio_bohemia_01_es.mp3",
+                        en: "https://res.cloudinary.com/origin-mvd/video/upload/v1710000002/origin_audio_bohemia_01_en.mp3",
+                        pt: "https://res.cloudinary.com/origin-mvd/video/upload/v1710000003/origin_audio_bohemia_01_pt.mp3"
+                    },
+                    demos: {
+                        es: "https://assets.mixkit.co/music/preview/mixkit-acoustic-guitar-chill-102.mp3",
+                        en: "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3",
+                        pt: "https://assets.mixkit.co/music/preview/mixkit-walking-the-dog-55.mp3"
+                    }
+                },
+                2: {
+                    id: 2,
+                    title: "Teatro Sonoro 2",
+                    subtitle: "Teatro Sonoro 2 (5 min)",
+                    duration: 300, // 05:00 (5 minutos)
+                    sources: {
+                        es: "https://res.cloudinary.com/origin-mvd/video/upload/v1710000011/origin_audio_bohemia_02_es.mp3",
+                        en: "https://res.cloudinary.com/origin-mvd/video/upload/v1710000012/origin_audio_bohemia_02_en.mp3",
+                        pt: "https://res.cloudinary.com/origin-mvd/video/upload/v1710000013/origin_audio_bohemia_02_pt.mp3"
+                    },
+                    demos: {
+                        es: "https://assets.mixkit.co/music/preview/mixkit-chill-bro-494.mp3",
+                        en: "https://assets.mixkit.co/music/preview/mixkit-valley-sunset-127.mp3",
+                        pt: "https://assets.mixkit.co/music/preview/mixkit-delight-flute-35.mp3"
+                    }
+                }
+            };
+
+            let currentTrack = 1;
+            let currentLang = 'es';
+
+            // =========================================================================
+            // ELEMENTOS DEL DOM
+            // =========================================================================
+            const audio = document.getElementById('audioTrack');
+            const listenerView = document.getElementById('listenerView');
+            const adminPanel = document.getElementById('adminPanel');
+            const touristSetupStage = document.getElementById('touristSetupStage');
+            const touristLiveStage = document.getElementById('touristLiveStage');
+            const enableAudioBtn = document.getElementById('enableAudioBtn');
+            const liveLanguageBadge = document.getElementById('liveLanguageBadge');
+            const radarCenterOrb = document.getElementById('radarCenterOrb');
+            const audioWaveBars = document.getElementById('audioWaveBars');
+            const touristHeroText = document.getElementById('touristHeroText');
+            const touristSubText = document.getElementById('touristSubText');
+            const wakeLockBadge = document.getElementById('wakeLockBadge');
+            const wakeLockText = document.getElementById('wakeLockText');
+            const changeLanguageBtn = document.getElementById('changeLanguageBtn');
+
+            // Track Selection Elements
+            const touristTrackBtn1 = document.getElementById('touristTrackBtn1');
+            const touristTrackBtn2 = document.getElementById('touristTrackBtn2');
+            const touristActiveTrackLabel = document.getElementById('touristActiveTrackLabel');
+            const touristQuickSwitchTrackBtn = document.getElementById('touristQuickSwitchTrackBtn');
+            const adminTrackPill1 = document.getElementById('adminTrackPill1');
+            const adminTrackPill2 = document.getElementById('adminTrackPill2');
+            const brandTitleH1 = document.getElementById('brandTitleH1');
+
+            // Admin Controls
+            const adminPlayBtn = document.getElementById('adminPlayBtn');
+            const adminPauseBtn = document.getElementById('adminPauseBtn');
+            const adminStopBtn = document.getElementById('adminStopBtn');
+            const skipBackBtn = document.getElementById('skipBackBtn');
+            const skipForwardBtn = document.getElementById('skipForwardBtn');
+            const guideScrubber = document.getElementById('guideScrubber');
+            const guideCurrentTime = document.getElementById('guideCurrentTime');
+            const guideTotalTime = document.getElementById('guideTotalTime');
+            const guideTrackStateLabel = document.getElementById('guideTrackStateLabel');
+            const guideMonitorToggle = document.getElementById('guideMonitorToggle');
+            const guideAlertBtn = document.getElementById('guideAlertBtn');
+            const touristCountBadge = document.getElementById('touristCountBadge');
+
+            // Global Status
+            const globalConnDot = document.getElementById('globalConnDot');
+            const globalStatusLabel = document.getElementById('globalStatusLabel');
+            const streetBanner = document.getElementById('streetBanner');
+            const bannerTitle = document.getElementById('bannerTitle');
+            const bannerSub = document.getElementById('bannerSub');
+            const bannerIcon = document.getElementById('bannerIcon');
+            const bannerAction = document.getElementById('bannerAction');
+            const resumeOverlay = document.getElementById('resumeOverlay');
+            const resumeTouchBtn = document.getElementById('resumeTouchBtn');
+
+            // =========================================================================
+            // ESTADO DE LA APLICACIÓN
+            // =========================================================================
+            let isConnected = false;
+            let wakeLock = null;
+            let expectedPlaybackState = 'PAUSED'; // 'PLAYING' | 'PAUSED' | 'STOPPED'
+            let trackDuration = 1020; // 17:00 en segundos por defecto (17 * 60)
+            let isScrubbing = false;
+            let guideLocalAudioActive = false;
+            let pingInterval = null;
+
+            // Determinar si es Administrador (Guía) mediante URL ?admin=1
+            const urlParams = new URLSearchParams(window.location.search);
+            let isAdmin = urlParams.get('admin') === '1';
+
+            // Canal MQTT privado y único para evitar interferencias
+            const topicName = "origen_uy/tour/bohemia_sync_01";
+            const topicTelemetry = "origen_uy/tour/bohemia_sync_01/telemetry";
+            const clientId = (isAdmin ? "guide_" : "tourist_") + Math.random().toString(16).slice(2, 10);
+
+            // =========================================================================
+            // FORMATO DE TIEMPO (MM:SS)
+            // =========================================================================
+            function formatTime(seconds) {
+                const s = Math.max(0, Math.floor(seconds || 0));
+                const mins = Math.floor(s / 60);
+                const secs = s % 60;
+                return (mins < 10 ? "0" + mins : mins) + ":" + (secs < 10 ? "0" + secs : secs);
+            }
+
+            // =========================================================================
+            // GESTIÓN DE PISTAS (AUDIO 1 VS AUDIO 2) & IDIOMAS
+            // =========================================================================
+            function loadTrack(trackId = currentTrack, lang = currentLang) {
+                currentTrack = trackId;
+                currentLang = lang;
+                const trackData = TRACKS_METADATA[currentTrack] || TRACKS_METADATA[1];
+                const targetUrl = trackData.sources[currentLang] || trackData.sources.es;
+
+                if (audio.src !== targetUrl && audio.src !== trackData.demos[currentLang]) {
+                    audio.src = targetUrl;
+                    audio.load();
+                }
+
+                trackDuration = trackData.duration;
+                if (guideScrubber) guideScrubber.max = trackDuration;
+                if (guideTotalTime) guideTotalTime.textContent = formatTime(trackDuration);
+
+                updateTrackUI();
+            }
+
+            function updateTrackUI() {
+                const trackData = TRACKS_METADATA[currentTrack] || TRACKS_METADATA[1];
+
+                // Tourist Setup Buttons
+                if (touristTrackBtn1) touristTrackBtn1.classList.toggle('active', currentTrack === 1);
+                if (touristTrackBtn2) touristTrackBtn2.classList.toggle('active', currentTrack === 2);
+
+                // Tourist Live Stage Bar
+                if (touristActiveTrackLabel) {
+                    touristActiveTrackLabel.textContent = trackData.subtitle;
+                }
+                if (touristQuickSwitchTrackBtn) {
+                    touristQuickSwitchTrackBtn.textContent = (currentTrack === 1 ? "Pasar a Teatro Sonoro 2 ⏭" : "⏮ Volver a Teatro Sonoro 1");
+                }
+
+                // Admin Pills
+                if (adminTrackPill1) adminTrackPill1.classList.toggle('active', currentTrack === 1);
+                if (adminTrackPill2) adminTrackPill2.classList.toggle('active', currentTrack === 2);
+            }
+
+            function selectTrack(trackId, isUserAction = false) {
+                if (currentTrack === trackId && !isUserAction) return;
+                const wasPlaying = !audio.paused;
+                audio.pause();
+                audio.currentTime = 0;
+                if (guideScrubber) guideScrubber.value = 0;
+                if (guideCurrentTime) guideCurrentTime.textContent = "00:00";
+
+                loadTrack(trackId, currentLang);
+
+                if (isUserAction && !isAdmin) {
+                    showStreetBanner(
+                        "🎧 Teatro Sonoro Seleccionado", 
+                        TRACKS_METADATA[trackId].title, 
+                        "🎵", 
+                        false
+                    );
+                    setTimeout(hideStreetBanner, 2500);
+                    updateTouristUIStandby();
+                }
+
+                if (isAdmin) {
+                    guideTrackStateLabel.textContent = "⏹ " + TRACKS_METADATA[trackId].title + " Lista (0:00)";
+                    guideTrackStateLabel.style.color = "var(--gold-accent)";
+                }
+            }
+
+            // Click Handlers para Pistas
+            if (touristTrackBtn1) touristTrackBtn1.addEventListener('click', () => selectTrack(1, true));
+            if (touristTrackBtn2) touristTrackBtn2.addEventListener('click', () => selectTrack(2, true));
+            if (touristQuickSwitchTrackBtn) {
+                touristQuickSwitchTrackBtn.addEventListener('click', () => {
+                    selectTrack(currentTrack === 1 ? 2 : 1, true);
+                });
+            }
+            if (adminTrackPill1) adminTrackPill1.addEventListener('click', () => {
+                selectTrack(1);
+                sendCommand("SWITCH_TRACK", 0);
+            });
+            if (adminTrackPill2) adminTrackPill2.addEventListener('click', () => {
+                selectTrack(2);
+                sendCommand("SWITCH_TRACK", 0);
+            });
+
+            // =========================================================================
+            // INICIALIZACIÓN DE LA VISTA (TURISTA VS GUÍA ESTRICTO VIA ?admin=1)
+            // =========================================================================
+            const adminIndicatorBadge = document.getElementById('adminIndicatorBadge');
+
+            function applyViewMode() {
+                if (isAdmin) {
+                    listenerView.style.display = 'none';
+                    adminPanel.style.display = 'block';
+                    if (adminIndicatorBadge) adminIndicatorBadge.style.display = 'inline-block';
+                    audio.muted = !guideLocalAudioActive;
+                    loadTrack(currentTrack, currentLang);
+                } else {
+                    listenerView.style.display = 'block';
+                    adminPanel.style.display = 'none';
+                    if (adminIndicatorBadge) adminIndicatorBadge.style.display = 'none';
+                    audio.muted = false;
+                    loadTrack(currentTrack, currentLang);
+                }
+            }
+
+            // =========================================================================
+            // 1. SELECTOR DE IDIOMA PARA EL TURISTA
+            // =========================================================================
+            const langButtons = {
+                es: document.getElementById('btnLangEs'),
+                en: document.getElementById('btnLangEn'),
+                pt: document.getElementById('btnLangPt')
+            };
+
+            function selectLanguage(lang) {
+                if (lang === 'en') {
+                    showStreetBanner("⏳ English: Próximamente", "La narración en inglés estará disponible en la próxima edición del pasaporte físico.", "🌐", false);
+                    setTimeout(hideStreetBanner, 3500);
+                    return;
+                }
+                if (lang === 'pt') {
+                    showStreetBanner("⏳ Português: Próximamente", "A narração em português estará disponível na próxima edição do pasaporte físico.", "🇧🇷", false);
+                    setTimeout(hideStreetBanner, 3500);
+                    return;
+                }
+
+                currentLang = lang;
+                Object.keys(langButtons).forEach(key => {
+                    if (langButtons[key]) {
+                        langButtons[key].classList.toggle('active', key === lang);
+                    }
+                });
+
+                loadTrack(currentTrack, lang);
+            }
+
+            Object.keys(langButtons).forEach(key => {
+                const btn = langButtons[key];
+                if (btn) {
+                    btn.addEventListener('click', () => selectLanguage(key));
+                }
+            });
+
+            if (changeLanguageBtn) {
+                changeLanguageBtn.addEventListener('click', () => {
+                    touristLiveStage.style.display = 'none';
+                    touristSetupStage.style.display = 'block';
+                });
+            }
+
+            // =========================================================================
+            // CONEXIÓN MQTT CON HADO/PAHO WEBSOCKETS (Haga TLS en 8884)
+            // =========================================================================
+            const client = new Paho.MQTT.Client("broker.hivemq.com", Number(8884), clientId);
+
+            function updateStatusBadge() {
+                if (isConnected) {
+                    globalConnDot.className = "status-dot connected";
+                    globalStatusLabel.textContent = isAdmin 
+                        ? "🟢 Guía en Línea · Señal Activa" 
+                        : "🟢 Sincronizado · Listo para audio";
+                } else {
+                    globalConnDot.className = "status-dot";
+                    globalStatusLabel.textContent = "🔴 Buscando señal satelital...";
+                }
+            }
+
+            client.onConnectionLost = function (responseObject) {
+                isConnected = false;
+                updateStatusBadge();
+                showStreetBanner(
+                    "⚠️ Señal Móvil Interrumpida", 
+                    "Reconectando automáticamente a la red del tour...", 
+                    "📶", 
+                    true
+                );
+                // Reconexión automática tolerante a fallas en calle
+                setTimeout(() => {
+                    if (!client.isConnected()) {
+                        connectMQTT();
+                    }
+                }, 3000);
+            };
+
+            client.onMessageArrived = function (message) {
+                if (message.destinationName === topicTelemetry) {
+                    handleTelemetryReport(message.payloadString);
+                } else {
+                    handleIncomingMessage(message.payloadString);
+                }
+            };
+
+            // =========================================================================
+            // TELEMETRÍA EN TIEMPO REAL (STAND-BY, ESCUCHANDO Y MONITOR DE DISPOSITIVOS)
+            // =========================================================================
+            const connectedTourists = new Map();
+            let touristStatus = 'UNCONNECTED'; // 'UNCONNECTED' | 'STANDBY' | 'PLAYING' | 'PAUSED'
+            let telemetryInterval = null;
+
+            const touristStandbyCount = document.getElementById('touristStandbyCount');
+            const touristPlayingCount = document.getElementById('touristPlayingCount');
+            const touristTotalCount = document.getElementById('touristTotalCount');
+            const deviceListContainer = document.getElementById('deviceListContainer');
+
+            function handleTelemetryReport(rawPayload) {
+                if (!isAdmin) return;
+                try {
+                    const data = JSON.parse(rawPayload);
+                    if (data && data.id && data.status) {
+                        connectedTourists.set(data.id, {
+                            id: data.id,
+                            status: data.status,
+                            lang: data.lang || 'es',
+                            track: data.track || 1,
+                            time: data.time || 0,
+                            lastSeen: Date.now()
+                        });
+                        renderAdminTelemetry();
+                    }
+                } catch(e) {}
+            }
+
+            function sendTelemetryStatus(st) {
+                touristStatus = st;
+                if (!isAdmin && client.isConnected()) {
+                    let msg = new Paho.MQTT.Message(JSON.stringify({
+                        type: "TELEMETRY",
+                        id: clientId,
+                        status: st,
+                        lang: currentLang,
+                        track: currentTrack,
+                        time: audio.currentTime ? parseFloat(audio.currentTime.toFixed(1)) : 0,
+                        timestamp: Date.now()
+                    }));
+                    msg.destinationName = topicTelemetry;
+                    msg.qos = 0;
+                    client.send(msg);
+                }
+            }
+
+            function renderAdminTelemetry() {
+                if (!isAdmin) return;
+                const now = Date.now();
+                // Limpiar dispositivos reales inactivos por más de 7.5 segundos
+                for (const [id, dev] of connectedTourists.entries()) {
+                    if (now - dev.lastSeen > 7500) {
+                        connectedTourists.delete(id);
+                    }
+                }
+
+                let standby = 0;
+                let playing = 0;
+                connectedTourists.forEach(dev => {
+                    if (dev.status === 'PLAYING') playing++;
+                    else standby++;
+                });
+
+                if (touristStandbyCount) touristStandbyCount.textContent = standby;
+                if (touristPlayingCount) touristPlayingCount.textContent = playing;
+                if (touristTotalCount) touristTotalCount.textContent = connectedTourists.size;
+
+                if (deviceListContainer) {
+                    if (connectedTourists.size === 0) {
+                        deviceListContainer.innerHTML = '<div style="font-size: 0.72rem; color: var(--text-muted); text-align: center; padding: 12px 0;">Esperando que los turistas escaneen su pasaporte y conecten audio...</div>';
+                    } else {
+                        let html = '';
+                        connectedTourists.forEach(dev => {
+                            const isListening = dev.status === 'PLAYING';
+                            const badgeClass = isListening ? 'listening' : 'standby';
+                            const statusText = isListening ? '🎧 Escuchando' : '🟡 Stand-by';
+                            const shortId = dev.id.replace('tourist_', '').slice(-6).toUpperCase();
+                            const trackText = 'Teatro Sonoro ' + (dev.track || 1);
+                            html += `
+                                <div class="device-row">
+                                    <div class="device-tag">
+                                        <span>📱 Turista #${shortId}</span>
+                                        <span style="color:var(--text-muted); font-size:0.65rem;">(${dev.lang.toUpperCase()} · ${trackText})</span>
+                                    </div>
+                                    <span class="device-status-badge ${badgeClass}">${statusText}</span>
+                                </div>
+                            `;
+                        });
+                        deviceListContainer.innerHTML = html;
+                    }
+                }
+            }
+
+            // Actualizar periódicamente métricas del Administrador
+            setInterval(() => {
+                if (isAdmin) renderAdminTelemetry();
+            }, 1000);
+
+            let isConnecting = false;
+            function connectMQTT() {
+                if (client.isConnected() || isConnecting) return;
+                isConnecting = true;
+                try {
+                    client.connect({
+                        onSuccess: function () {
+                            isConnecting = false;
+                            isConnected = true;
+                            client.subscribe(topicName);
+                            client.subscribe(topicTelemetry);
+                            updateStatusBadge();
+                            hideStreetBanner();
+                            // Enviar presencia si es turista
+                            if (!isAdmin) {
+                                sendTelemetryPing();
+                            }
+                        },
+                        onFailure: function (err) {
+                            isConnecting = false;
+                            isConnected = false;
+                            updateStatusBadge();
+                            showStreetBanner(
+                                "🔴 Error de Conexión 4G", 
+                                "Verifica tus datos móviles o reintenta.", 
+                                "📡", 
+                                true
+                            );
+                            setTimeout(connectMQTT, 4000); // Backoff de reintento
+                        },
+                        useSSL: true,
+                        timeout: 8,
+                        keepAliveInterval: 15,
+                        cleanSession: true
+                    });
+                } catch(e) {
+                    isConnecting = false;
+                    console.error("MQTT init error:", e);
+                }
+            }
+
+            // =========================================================================
+            // MANEJO DE MENSAJES MQTT Y SINCRONIZACIÓN
+            // =========================================================================
+            function handleIncomingMessage(rawPayload) {
+                let action = rawPayload;
+                let targetTime = null;
+                let targetTrack = null;
+
+                // Soporte para JSON estructurado o strings simples (PLAY, PAUSE, STOP)
+                try {
+                    if (rawPayload.startsWith("{")) {
+                        const parsed = JSON.parse(rawPayload);
+                        action = parsed.action || parsed.cmd;
+                        targetTime = parsed.time !== undefined ? parsed.time : null;
+                        targetTrack = parsed.track !== undefined ? parsed.track : null;
+                    }
+                } catch(e) {}
+
+                if (action === "PING_GUIDE") {
+                    // El guía pide censo de turistas
+                    if (!isAdmin) sendTelemetryPing();
+                    return;
+                }
+
+                if (action === "ALERT_EMERGENCY") {
+                    showEmergencyAlert();
+                    return;
+                }
+
+                // Sincronización de Teatro Sonoro (Audio 1 vs Audio 2)
+                if (targetTrack && targetTrack !== currentTrack) {
+                    currentTrack = targetTrack;
+                    loadTrack(currentTrack, currentLang);
+                    if (!isAdmin) {
+                        showStreetBanner(
+                            "🎵 Teatro Sonoro Sincronizado", 
+                            "El guía cambió a: " + (TRACKS_METADATA[currentTrack] ? TRACKS_METADATA[currentTrack].title : "Teatro Sonoro " + currentTrack), 
+                            "🎧", 
+                            false
+                        );
+                        setTimeout(hideStreetBanner, 3000);
+                    }
+                }
+
+                // Control de audio para los turistas (o guía si tiene monitor activado)
+                if (!isAdmin || guideLocalAudioActive) {
+                    if (action === "PLAY") {
+                        expectedPlaybackState = 'PLAYING';
+                        if (targetTime !== null && Math.abs(audio.currentTime - targetTime) > 1.5) {
+                            audio.currentTime = targetTime;
+                        }
+                        
+                        const playPromise = audio.play();
+                        if (playPromise !== undefined) {
+                            playPromise.then(() => {
+                                updateTouristUIPlaying();
+                            }).catch(err => {
+                                console.warn("Autoplay bloqueado:", err);
+                                resumeOverlay.style.display = 'flex';
+                            });
+                        }
+                    } else if (action === "PAUSE") {
+                        expectedPlaybackState = 'PAUSED';
+                        audio.pause();
+                        if (targetTime !== null) {
+                            audio.currentTime = targetTime;
+                        }
+                        updateTouristUIPaused();
+                    } else if (action === "STOP") {
+                        expectedPlaybackState = 'STOPPED';
+                        audio.pause();
+                        audio.currentTime = 0;
+                        updateTouristUIStopped();
+                    } else if (action === "SEEK" && targetTime !== null) {
+                        audio.currentTime = targetTime;
+                    }
+                }
+
+                // Actualizaciones visuales en el panel del Administrador
+                if (isAdmin) {
+                    const trackName = currentTrack === 1 ? "Audio 1" : "Audio 2";
+                    if (action === "PLAY") {
+                        guideTrackStateLabel.textContent = "▶ Reproduciendo (" + trackName + ")";
+                        guideTrackStateLabel.style.color = "var(--success)";
+                    } else if (action === "PAUSE") {
+                        guideTrackStateLabel.textContent = "⏸ En Pausa (" + trackName + ")";
+                        guideTrackStateLabel.style.color = "var(--warning)";
+                    } else if (action === "STOP") {
+                        guideTrackStateLabel.textContent = "⏹ Detenido (0:00 · " + trackName + ")";
+                        guideTrackStateLabel.style.color = "var(--danger)";
+                    }
+                }
+            }
+
+            function sendCommand(cmd, time = null) {
+                if (client.isConnected()) {
+                    let payload = {
+                        action: cmd,
+                        track: currentTrack,
+                        time: time !== null ? parseFloat(time.toFixed(1)) : null
+                    };
+                    let message = new Paho.MQTT.Message(JSON.stringify(payload));
+                    message.destinationName = topicName;
+                    message.qos = 1;
+                    client.send(message);
+                } else {
+                    showStreetBanner("⚠️ Sin Conexión MQTT", "Esperando que se restablezca la red para enviar orden.", "📡", true);
+                }
+            }
+
+            function sendTelemetryPing() {
+                if (client.isConnected()) {
+                    let message = new Paho.MQTT.Message(JSON.stringify({
+                        type: "PRESENCE",
+                        lang: currentLang,
+                        clientId: clientId,
+                        time: Date.now()
+                    }));
+                    message.destinationName = topicTelemetry;
+                    message.qos = 0;
+                    client.send(message);
+                }
+            }
+
+            // =========================================================================
+            // 4. RESILIENCIA EXTREMA PARA LA CALLE: WAKE LOCK & VISIBILITY
+            // =========================================================================
+            // Solicitar Screen Wake Lock para evitar que la pantalla se apague al caminar
+            async function requestWakeLock() {
+                if ('wakeLock' in navigator) {
+                    try {
+                        wakeLock = await navigator.wakeLock.request('screen');
+                        wakeLockBadge.classList.add('active');
+                        wakeLockText.textContent = "Pantalla activa (Wake Lock ON)";
+                        wakeLock.addEventListener('release', () => {
+                            wakeLockBadge.classList.remove('active');
+                            wakeLockText.textContent = "Wake Lock inactivo";
+                        });
+                    } catch (err) {
+                        console.warn("Wake Lock no permitido:", err);
+                        wakeLockText.textContent = "Modo móvil estándar";
+                    }
+                }
+            }
+
+            // Evento visibilitychange: Manejar cuando el usuario cambia de pestaña o vuelve
+            document.addEventListener('visibilitychange', async () => {
+                if (document.visibilityState === 'visible') {
+                    // Re-adquirir Wake Lock
+                    if (touristLiveStage.style.display === 'block') {
+                        requestWakeLock();
+                    }
+
+                    // Comprobar si el audio debería estar sonando y fue frenado por el SO
+                    if (expectedPlaybackState === 'PLAYING' && audio.paused && !isAdmin) {
+                        resumeOverlay.style.display = 'flex';
+                    }
+
+                    // Asegurar reconexión MQTT rápida
+                    if (!client.isConnected()) {
+                        connectMQTT();
+                    }
+                }
+            });
+
+            // Manejo de eventos de red nativos (Offline / Online)
+            window.addEventListener('offline', () => {
+                showStreetBanner(
+                    "📵 Sin Señal de Internet", 
+                    "Tu teléfono perdió conexión de datos (3G/4G). El audio guardado seguirá sonando.", 
+                    "⚠️", 
+                    true
+                );
+            });
+
+            window.addEventListener('online', () => {
+                showStreetBanner(
+                    "📶 Señal Móvil Recuperada", 
+                    "Reconectando con el tour del guía...", 
+                    "✅", 
+                    false
+                );
+                setTimeout(connectMQTT, 500);
+            });
+
+            function showStreetBanner(title, text, icon = "⚠️", isDanger = false) {
+                bannerTitle.textContent = title;
+                bannerSub.textContent = text;
+                bannerIcon.textContent = icon;
+                streetBanner.className = isDanger ? "street-banner show danger" : "street-banner show";
+            }
+
+            function hideStreetBanner() {
+                streetBanner.className = "street-banner";
+            }
+
+            // Overlay de recuperación rápida táctil (desbloqueo tras suspensión)
+            resumeTouchBtn.addEventListener('click', () => {
+                resumeOverlay.style.display = 'none';
+                audio.play().then(() => {
+                    updateTouristUIPlaying();
+                }).catch(e => {
+                    console.error("Resume error:", e);
+                });
+            });
+
+            function showEmergencyAlert() {
+                showStreetBanner(
+                    "📢 ATENCIÓN DEL GUÍA", 
+                    "El guía solicita pausar el avance y prestar atención al grupo.", 
+                    "📢", 
+                    true
+                );
+                if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            }
+
+            // =========================================================================
+            // 2. MEJORAS VISUALES & FLUJO DEL TURISTA
+            // =========================================================================
+            enableAudioBtn.addEventListener('click', () => {
+                enableAudioBtn.disabled = true;
+                enableAudioBtn.innerHTML = `
+                    <div class="btn-icon-orb">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="spin" style="animation: spin 1s linear infinite;">
+                            <circle cx="12" cy="12" r="9" stroke-dasharray="32" stroke-dashoffset="12"></circle>
+                        </svg>
+                    </div>
+                    <div class="btn-text-col">
+                        <span class="btn-title-main">Activando Audio...</span>
+                        <span class="btn-subtitle-sub">Preparando sincronización satelital</span>
+                    </div>
+                    <div class="btn-pulse-arrow" style="opacity: 0.4;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </div>
+                `;
+
+                // Cargar la pista elegida
+                loadTrack(currentTrack, currentLang);
+
+                // Desbloqueo estricto para iOS Safari y Android Chrome:
+                // Tocar la pantalla y lanzar un micro play/pause desbloquea el motor de audio
+                audio.play().then(() => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    activateLiveTouristMode();
+                }).catch(e => {
+                    // Intento con fallback si la URL Cloudinary da 404 o no existe aún
+                    console.warn("Fallo audio Cloudinary, aplicando fallback de demostración:", e);
+                    const demoSrc = (TRACKS_METADATA[currentTrack] && TRACKS_METADATA[currentTrack].demos[currentLang]) || TRACKS_METADATA[1].demos.es;
+                    audio.src = demoSrc;
+                    audio.load();
+                    audio.play().then(() => {
+                        audio.pause();
+                        audio.currentTime = 0;
+                        activateLiveTouristMode();
+                    }).catch(err => {
+                        activateLiveTouristMode();
+                    });
+                });
+            });
+
+            function activateLiveTouristMode() {
+                touristSetupStage.style.display = 'none';
+                touristLiveStage.style.display = 'block';
+                requestWakeLock();
+                updateTouristUIStandby();
+                sendTelemetryStatus('STANDBY');
+                if (!telemetryInterval) {
+                    telemetryInterval = setInterval(() => {
+                        if (!isAdmin && client.isConnected()) {
+                            sendTelemetryStatus(touristStatus);
+                        }
+                    }, 2500);
+                }
+                if (navigator.vibrate) navigator.vibrate(60);
+            }
+
+            function updateTouristUIStandby() {
+                radarCenterOrb.classList.remove('playing');
+                audioWaveBars.classList.remove('active');
+                touristHeroText.textContent = "🟡 Listo en Stand-by";
+                touristHeroText.style.color = "#fbbf24";
+                touristSubText.textContent = "Tu pasaporte y audio están conectados. El guía ya ve tu dispositivo listo en su pantalla y disparará la narración en breve.";
+                if (liveLanguageBadge) {
+                    liveLanguageBadge.textContent = "ESTADO: 🟡 EN STAND-BY";
+                    liveLanguageBadge.style.color = "#fbbf24";
+                }
+                sendTelemetryStatus('STANDBY');
+            }
+
+            function updateTouristUIPlaying() {
+                radarCenterOrb.classList.add('playing');
+                audioWaveBars.classList.add('active');
+                touristHeroText.textContent = "▶ Narración en Curso";
+                touristHeroText.style.color = "var(--success)";
+                touristSubText.textContent = "Escuchando en sincronía con el grupo. Ajusta el volumen en los botones de tu celular.";
+                if (liveLanguageBadge) {
+                    liveLanguageBadge.textContent = "ESTADO: 🟢 ESCUCHANDO EN VIVO";
+                    liveLanguageBadge.style.color = "var(--success)";
+                }
+                sendTelemetryStatus('PLAYING');
+            }
+
+            function updateTouristUIPaused() {
+                radarCenterOrb.classList.remove('playing');
+                audioWaveBars.classList.remove('active');
+                touristHeroText.textContent = "⏸ Guía Pausó el Audio";
+                touristHeroText.style.color = "var(--warning)";
+                touristSubText.textContent = "La narración se detuvo momentáneamente por indicación del guía.";
+                if (liveLanguageBadge) {
+                    liveLanguageBadge.textContent = "ESTADO: ⏸ EN PAUSA";
+                    liveLanguageBadge.style.color = "var(--warning)";
+                }
+                sendTelemetryStatus('STANDBY');
+            }
+
+            function updateTouristUIStopped() {
+                radarCenterOrb.classList.remove('playing');
+                audioWaveBars.classList.remove('active');
+                touristHeroText.textContent = "⏹ Pista Reiniciada (0:00)";
+                touristHeroText.style.color = "var(--gold-accent)";
+                touristSubText.textContent = "El guía reinició la pista al segundo 0. Esperando nueva orden de inicio.";
+                if (liveLanguageBadge) {
+                    liveLanguageBadge.textContent = "ESTADO: 🟡 EN STAND-BY (0:00)";
+                    liveLanguageBadge.style.color = "#fbbf24";
+                }
+                sendTelemetryStatus('STANDBY');
+            }
+
+            // Manejo de eventos de buffering de red del elemento <audio>
+            audio.addEventListener('waiting', () => {
+                if (expectedPlaybackState === 'PLAYING') {
+                    touristHeroText.textContent = "⏳ Descargando 4G...";
+                }
+            });
+
+            audio.addEventListener('playing', () => {
+                if (!isAdmin) updateTouristUIPlaying();
+            });
+
+            audio.addEventListener('pause', () => {
+                if (!isAdmin && expectedPlaybackState !== 'PLAYING') updateTouristUIStandby();
+            });
+
+            audio.addEventListener('loadedmetadata', () => {
+                if (!isNaN(audio.duration) && audio.duration > 10) {
+                    trackDuration = Math.round(audio.duration);
+                    guideScrubber.max = trackDuration;
+                    guideTotalTime.textContent = formatTime(trackDuration);
+                }
+            });
+
+            audio.addEventListener('timeupdate', () => {
+                if (isAdmin && !isScrubbing) {
+                    guideScrubber.value = Math.floor(audio.currentTime);
+                    guideCurrentTime.textContent = formatTime(audio.currentTime);
+                }
+            });
+
+            // Si ocurre error de red con la pista Cloudinary (e.g. 404 antes de que el usuario suba sus archivos)
+            audio.addEventListener('error', (e) => {
+                console.warn("Audio load error, usando fallback:", e);
+                const demoSrc = (TRACKS_METADATA[currentTrack] && TRACKS_METADATA[currentTrack].demos[currentLang]) 
+                    || TRACKS_METADATA[1].demos.es;
+                if (audio.src !== demoSrc) {
+                    audio.src = demoSrc;
+                    audio.load();
+                }
+            });
+
+            // =========================================================================
+            // 3. PANEL DE CONTROL AVANZADO PARA EL GUÍA
+            // =========================================================================
+            adminPlayBtn.addEventListener('click', () => {
+                const currentTime = parseFloat(guideScrubber.value);
+                sendCommand("PLAY", currentTime);
+                if (guideLocalAudioActive) {
+                    audio.currentTime = currentTime;
+                    audio.play().catch(()=>{});
+                }
+                guideTrackStateLabel.textContent = "▶ Reproduciendo";
+                guideTrackStateLabel.style.color = "var(--success)";
+            });
+
+            adminPauseBtn.addEventListener('click', () => {
+                const currentTime = parseFloat(guideScrubber.value);
+                sendCommand("PAUSE", currentTime);
+                if (guideLocalAudioActive) {
+                    audio.pause();
+                }
+                guideTrackStateLabel.textContent = "⏸ En Pausa";
+                guideTrackStateLabel.style.color = "var(--warning)";
+            });
+
+            // BOTÓN SOLICITADO: "STOP / REINICIAR" (detiene y resetea a segundo 0)
+            adminStopBtn.addEventListener('click', () => {
+                sendCommand("STOP", 0);
+                guideScrubber.value = 0;
+                guideCurrentTime.textContent = "00:00";
+                if (guideLocalAudioActive) {
+                    audio.pause();
+                    audio.currentTime = 0;
+                }
+                guideTrackStateLabel.textContent = "⏹ Detenido (0:00)";
+                guideTrackStateLabel.style.color = "var(--danger)";
+            });
+
+            // Saltos de tiempo (+15s / -15s)
+            skipBackBtn.addEventListener('click', () => {
+                let newTime = Math.max(0, parseFloat(guideScrubber.value) - 15);
+                guideScrubber.value = newTime;
+                guideCurrentTime.textContent = formatTime(newTime);
+                sendCommand("SEEK", newTime);
+                if (guideLocalAudioActive) audio.currentTime = newTime;
+            });
+
+            skipForwardBtn.addEventListener('click', () => {
+                let newTime = Math.min(trackDuration, parseFloat(guideScrubber.value) + 15);
+                guideScrubber.value = newTime;
+                guideCurrentTime.textContent = formatTime(newTime);
+                sendCommand("SEEK", newTime);
+                if (guideLocalAudioActive) audio.currentTime = newTime;
+            });
+
+            // Scrubber interactivo del Guía
+            guideScrubber.addEventListener('input', () => {
+                isScrubbing = true;
+                guideCurrentTime.textContent = formatTime(guideScrubber.value);
+            });
+
+            guideScrubber.addEventListener('change', () => {
+                isScrubbing = false;
+                const newTime = parseFloat(guideScrubber.value);
+                sendCommand("SEEK", newTime);
+                if (guideLocalAudioActive) {
+                    audio.currentTime = newTime;
+                }
+            });
+
+            // Temporizador interno del guía si el audio local está apagado
+            let guideTimer = setInterval(() => {
+                if (isAdmin && guideTrackStateLabel.textContent.includes("Reproduciendo") && !guideLocalAudioActive && !isScrubbing) {
+                    let cur = parseFloat(guideScrubber.value);
+                    if (cur < trackDuration) {
+                        cur += 1;
+                        guideScrubber.value = cur;
+                        guideCurrentTime.textContent = formatTime(cur);
+                    }
+                }
+            }, 1000);
+
+            // Toggle para silenciar/activar monitor local en el teléfono del guía
+            guideMonitorToggle.addEventListener('change', (e) => {
+                guideLocalAudioActive = e.target.checked;
+                audio.muted = !guideLocalAudioActive;
+                if (guideLocalAudioActive) {
+                    audio.currentTime = parseFloat(guideScrubber.value);
+                    if (guideTrackStateLabel.textContent.includes("Reproduciendo")) {
+                        audio.play().catch(()=>{});
+                    }
+                } else {
+                    audio.pause();
+                }
+            });
+
+            // Botón de Alerta de Emergencia para el grupo
+            guideAlertBtn.addEventListener('click', () => {
+                sendCommand("PAUSE", parseFloat(guideScrubber.value));
+                sendCommand("ALERT_EMERGENCY");
+                guideTrackStateLabel.textContent = "📢 Alerta Enviada";
+            });
+
+            // Iniciar vista y conectar MQTT
+            applyViewMode();
+            connectMQTT();
+
+        })();
+    </script>
+</body>
+</html>

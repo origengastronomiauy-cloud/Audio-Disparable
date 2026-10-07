@@ -1,0 +1,6 @@
+{
+  "name": "ORIGEN - Audio Guía Sincronizada MVD Bohemia",
+  "description": "Audioguía sincronizada para turismo cultural y gastronómico en Montevideo (Ruta MVD Bohemia). Vinculada a pasaporte físico con telemetría en tiempo real vía MQTT.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
