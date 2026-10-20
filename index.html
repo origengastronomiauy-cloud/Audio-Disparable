@@ -564,9 +564,9 @@
             });
 
             // =========================================================================
-            // CONEXIÓN MQTT
+            // CONEXIÓN MQTT CON SERVIDOR ESTABLE (EMQX Público)
             // =========================================================================
-            const client = new Paho.MQTT.Client("broker.hivemq.com", Number(8884), clientId);
+            const client = new Paho.MQTT.Client("broker.emqx.io", Number(8084), "/mqtt", clientId);
             let isConnecting = false;
 
             function connectMQTT() {
@@ -587,7 +587,7 @@
                         showStreetBanner("🔴 Error de Conexión 4G", "Verifica tus datos móviles.", "📡", true);
                         setTimeout(connectMQTT, 4000);
                     },
-                    useSSL: true, timeout: 8, keepAliveInterval: 15, reconnect: true
+                    useSSL: true, timeout: 10, keepAliveInterval: 15
                 });
             }
 
@@ -716,20 +716,55 @@
                     } else if (action === "SEEK" && targetTime !== null) {
                         audio.currentTime = targetTime;
                     }
-                } else if (isAdmin) {
-                    // Admin UI Update based on their own actions
+                } else if (!isAdmin && !isTouristConnected) {
+                    audio.pause();
+                    audio.muted = true;
+                    if (action === "PLAY") expectedPlaybackState = 'PLAYING';
+                    else if (action === "PAUSE") expectedPlaybackState = 'PAUSED';
+                    else if (action === "STOP") expectedPlaybackState = 'STOPPED';
+                    if (targetTime !== null) lastGuideTargetTime = targetTime;
+                } else if (isAdmin && guideLocalAudioActive) {
                     if (action === "PLAY") {
-                        startAdminPlaybackTimer(); setAdminPauseBtnState(false);
-                        if(guideLocalAudioActive) { audio.muted = false; if(targetTime!==null) audio.currentTime = targetTime; audio.play().catch(()=>{}); }
-                        if (guideTrackStateLabel) { guideTrackStateLabel.textContent = "▶ Reproduciendo"; guideTrackStateLabel.style.color = "var(--success)"; }
+                        audio.muted = false;
+                        if (targetTime !== null) audio.currentTime = targetTime;
+                        audio.play().catch(()=>{});
                     } else if (action === "PAUSE") {
-                        pauseAdminPlaybackTimer(); setAdminPauseBtnState(true);
-                        if(guideLocalAudioActive) audio.pause();
-                        if (guideTrackStateLabel) { guideTrackStateLabel.textContent = "⏸ En Pausa"; guideTrackStateLabel.style.color = "var(--warning)"; }
+                        audio.pause();
+                        if (targetTime !== null) audio.currentTime = targetTime;
                     } else if (action === "STOP") {
-                        stopAdminPlaybackTimer(); guideScrubber.value = 0; guideCurrentTime.textContent = "00:00";
-                        if(guideLocalAudioActive) { audio.pause(); audio.currentTime = 0; }
-                        if (guideTrackStateLabel) { guideTrackStateLabel.textContent = "⏹ Detenido (0:00)"; guideTrackStateLabel.style.color = "var(--danger)"; }
+                        audio.pause(); audio.currentTime = 0;
+                    } else if (action === "SEEK" && targetTime !== null) {
+                        audio.currentTime = targetTime;
+                    }
+                }
+
+                if (isAdmin) {
+                    const trackName = currentTrack === 1 ? "Teatro Sonoro 1" : "Teatro Sonoro 2";
+                    if (guideTrackStateLabel) {
+                        if (action === "PLAY") {
+                            adminPlaybackRunning = true;
+                            setAdminPauseBtnState(false);
+                            startAdminPlaybackTimer();
+                            guideTrackStateLabel.textContent = "▶ Reproduciendo (" + trackName + ")";
+                            guideTrackStateLabel.style.color = "var(--success)";
+                        } else if (action === "PAUSE") {
+                            adminPlaybackRunning = false;
+                            setAdminPauseBtnState(true);
+                            pauseAdminPlaybackTimer();
+                            guideTrackStateLabel.textContent = "⏸ En Pausa (" + trackName + ")";
+                            guideTrackStateLabel.style.color = "var(--warning)";
+                        } else if (action === "STOP") {
+                            adminPlaybackRunning = false;
+                            setAdminPauseBtnState(false);
+                            stopAdminPlaybackTimer();
+                            guideScrubber.value = 0;
+                            guideCurrentTime.textContent = "00:00";
+                            guideTrackStateLabel.textContent = "⏹ Detenido (0:00 · " + trackName + ")";
+                            guideTrackStateLabel.style.color = "var(--danger)";
+                        } else if (action === "SEEK" && targetTime !== null) {
+                            guideScrubber.value = targetTime;
+                            guideCurrentTime.textContent = formatTime(targetTime);
+                        }
                     }
                 }
             }
